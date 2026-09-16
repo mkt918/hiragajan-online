@@ -4,70 +4,99 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>ひらがじゃん オンライン</title>
+  <meta name="description" content="ひらがなカードで言葉を揃える対戦ゲーム「ひらがじゃん」。2〜4人でリアルタイム対戦。">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%80%84%3C/text%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&family=Plus+Jakarta+Sans:wght@600;800&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/tokens.css?v=1">
-  <link rel="stylesheet" href="css/style.css?v=1">
+  <link rel="stylesheet" href="css/tokens.css?v=2">
+  <link rel="stylesheet" href="css/style.css?v=2">
 </head>
 <body>
 
   <!-- ===== ロビー画面 ===== -->
   <main id="lobby-screen">
-    <h1>ひらがじゃん</h1>
-    <p id="connection-status" class="muted">接続中…</p>
+    <header class="hero">
+      <p class="hero__kicker">ひらがな対戦カードゲーム</p>
+      <h1 class="hero__title">🀄 ひらがじゃん</h1>
+      <p class="hero__lead">ひらがなカードを揃えて言葉をつくろう。2〜4人でリアルタイム対戦。</p>
+    </header>
+    <p id="connection-status" class="status-pill">接続中…</p>
 
     <section class="card-box">
-      <label for="name-input">なまえ</label>
-      <input type="text" id="name-input" maxlength="12" placeholder="ニックネーム" autocomplete="nickname">
+      <label class="field-label" for="name-input">なまえ</label>
+      <input type="text" id="name-input" maxlength="12" placeholder="ニックネームを入れてね" autocomplete="nickname">
     </section>
 
     <section class="card-box">
-      <h2>部屋をつくる</h2>
-      <div class="row">
-        <label><input type="radio" name="mode" value="basic" checked> きほん(7枚・2+3+3)</label>
-        <label><input type="radio" name="mode" value="advanced"> じょうきゅう(13枚・ポン/ロンあり)</label>
+      <h2>🎴 部屋をつくる</h2>
+      <div class="mode-toggle" role="radiogroup" aria-label="ルール">
+        <label class="mode-option">
+          <input type="radio" name="mode" value="basic" checked>
+          <span class="mode-option__title">きほん</span>
+          <span class="mode-option__desc">7枚配って、8枚で「2+3+3」の言葉ができたらあがり</span>
+        </label>
+        <label class="mode-option">
+          <input type="radio" name="mode" value="advanced">
+          <span class="mode-option__title">じょうきゅう</span>
+          <span class="mode-option__desc">13枚配って14枚で完成。ポン・ロンもあり</span>
+        </label>
       </div>
-      <div class="row">
-        <label><input type="checkbox" id="open-hands-input" checked> 手札をみんなに見せる</label>
+      <div class="row settings-row">
+        <label class="check-pill"><input type="checkbox" id="open-hands-input" checked> 手札をみんなに見せる</label>
+        <label class="select-pill">
+          ポン/ロンの受付
+          <select id="claim-seconds-input">
+            <option value="3">3秒</option>
+            <option value="5" selected>5秒</option>
+            <option value="8">8秒</option>
+            <option value="0">なし(次の人が引くまで)</option>
+          </select>
+        </label>
       </div>
-      <div class="row">
-        <label for="claim-seconds-input">ポン/ロンの受付(秒)</label>
-        <select id="claim-seconds-input">
-          <option value="3">3</option>
-          <option value="5" selected>5</option>
-          <option value="8">8</option>
-          <option value="0">なし(次の人が引くまで)</option>
-        </select>
-      </div>
-      <button id="create-room-btn" class="primary" disabled>部屋をつくる</button>
+      <button id="create-room-btn" class="primary btn-lg" disabled>部屋をつくる</button>
     </section>
 
     <section class="card-box">
-      <h2>部屋に入る</h2>
+      <h2>🔑 部屋に入る</h2>
+      <p class="muted">ホストにもらった4けたのコードを入れてね</p>
       <div class="row">
-        <input type="text" id="room-code-input" inputmode="numeric" maxlength="4" placeholder="4けたの部屋コード">
-        <button id="join-room-btn" class="primary" disabled>入る</button>
+        <input type="text" id="room-code-input" class="code-input" inputmode="numeric" maxlength="4" placeholder="0000">
+        <button id="join-room-btn" class="primary btn-lg">入る</button>
       </div>
     </section>
+
     <p id="lobby-error" class="error"></p>
-    <p class="muted"><a href="tests.html">自己検証</a></p>
+
+    <details class="glossary">
+      <summary>ことばの説明</summary>
+      <dl>
+        <dt>ツモ</dt><dd>山札から1枚引くこと。</dd>
+        <dt>ポン</dt><dd>(じょうきゅう限定)ほかの人が捨てたカード+自分の手札2枚で3枚1組を作ること。作った組は動かせなくなる。</dd>
+        <dt>ロン</dt><dd>(じょうきゅう限定)ほかの人が捨てたカードで、自分の手札が完成すること。</dd>
+        <dt>あがり</dt><dd>手札がぴったりの枚数(きほん8枚・じょうきゅう14枚)になり、実在する言葉に分けられた状態。宣言してみんなで確認する。</dd>
+      </dl>
+    </details>
+    <p class="muted footer-link"><a href="tests.html">自己検証ページ →</a></p>
   </main>
 
   <!-- ===== 待機画面(部屋に入ったがゲーム未開始) ===== -->
   <main id="wait-screen" class="hidden">
-    <h1>部屋 <span id="wait-room-code" class="room-code"></span></h1>
-    <div class="row">
-      <button id="copy-link-btn">リンクをコピー</button>
+    <header class="hero hero--compact">
+      <p class="hero__kicker">部屋コード</p>
+      <p class="room-code" id="wait-room-code"></p>
+    </header>
+    <div class="row center-row">
+      <button id="copy-link-btn">🔗 リンクをコピー</button>
       <button id="leave-room-btn">部屋を出る</button>
     </div>
     <section class="card-box">
-      <h2>参加者</h2>
-      <ul id="wait-players"></ul>
-      <p id="wait-settings" class="muted"></p>
+      <h2>参加者<span class="muted" id="wait-count"></span></h2>
+      <ul id="wait-players" class="player-list"></ul>
+      <p id="wait-settings" class="settings-summary"></p>
     </section>
-    <button id="start-game-btn" class="primary hidden">はじめる</button>
-    <p id="wait-msg" class="muted"></p>
+    <button id="start-game-btn" class="primary btn-lg hidden">🎉 はじめる</button>
+    <p id="wait-msg" class="muted center-text"></p>
     <p id="wait-error" class="error"></p>
   </main>
 
@@ -75,23 +104,24 @@
   <div id="game-screen" class="hidden">
     <div id="banner" class="banner"></div>
     <main>
-      <div class="row muted">
-        <span>部屋 <strong id="game-room-code"></strong></span>
-        <span>第<span id="round-no"></span>局</span>
-        <span>山札 <strong id="deck-count"></strong> 枚</span>
-        <span id="mode-label"></span>
+      <div class="hud row">
+        <span class="hud__item">部屋 <strong id="game-room-code"></strong></span>
+        <span class="hud__item">第<span id="round-no"></span>局</span>
+        <span class="hud__item">🂠 山札 <strong id="deck-count"></strong>枚</span>
+        <span class="hud__item hud__mode" id="mode-label"></span>
       </div>
 
-      <section id="others"></section>
+      <section id="others" class="others-grid"></section>
 
-      <section class="card-box">
+      <section class="card-box my-area">
         <div class="row">
           <span class="player__name" id="my-name"></span>
           <span class="muted" id="my-count"></span>
-          <button id="undo-btn" disabled>もどす</button>
-          <button id="clear-spaces-btn">スペースを消す</button>
+          <span class="spacer"></span>
+          <button id="undo-btn" class="btn-sm" disabled title="ひとつ前の並びにもどす">↩ もどす</button>
+          <button id="clear-spaces-btn" class="btn-sm">スペースを消す</button>
         </div>
-        <div id="words-preview" class="words hidden"></div>
+        <div id="words-preview" class="words words--preview hidden"></div>
         <div id="my-melds" class="row"></div>
         <div id="my-hand"></div>
         <div id="my-discards" class="discards"></div>
@@ -110,6 +140,6 @@
   <script src="js/cards.js?v=1"></script>
   <script src="js/game-logic.js?v=1"></script>
   <script src="js/hand-ui.js?v=1"></script>
-  <script src="js/app.js?v=1"></script>
+  <script src="js/app.js?v=2"></script>
 </body>
 </html>

@@ -265,11 +265,12 @@
   function renderWait() {
     showScreen('wait');
     el('wait-room-code').textContent = roomCode;
+    el('wait-count').textContent = '(' + room.order.length + '/' + L.MAX_PLAYERS + '人)';
     const ul = el('wait-players');
     ul.innerHTML = '';
     room.order.forEach((u) => {
       const li = document.createElement('li');
-      li.textContent = nameOf(u) + (u === room.hostUid ? '(ホスト)' : '') + (u === uid ? ' ← あなた' : '');
+      li.textContent = (u === room.hostUid ? '👑 ' : '') + nameOf(u) + (u === uid ? '(あなた)' : '');
       ul.appendChild(li);
     });
     const s = room.settings;

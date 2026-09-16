@@ -1,6 +1,10 @@
 [
   {
     "date": "2026-09-16",
-    "note": "Phase A: css/tokens.css は 02_動物将棋(genre playful / theme Hum)の仮コピー。Phase B の冒頭で hallmark により再生成して差し替える予定。"
+    "macrostructure": "designed-as-app (no marketing macrostructure — three-screen utility: Lobby + Wait + Game)",
+    "theme": "Hum (retuned)",
+    "theme_axes": "light / rounded-sans / multi (accent=amber 85° · accent-2=indigo 250° · accent-3=vermilion 27° · mint=jade 165°)",
+    "enrichment": "none (typography + card-tile UI only)",
+    "brief": "ひらがじゃん オンライン — Firebase/GitHub Pages製のリアルタイム対戦カードゲーム。Phase B でトークンを役割別に再チューニング"
   }
 ]
