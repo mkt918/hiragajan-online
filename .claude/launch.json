@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "hiragajan",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "serve", ".", "-l", "5178"],
+      "port": 5178
+    }
+  ]
+}

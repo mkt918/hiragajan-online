@@ -1,0 +1,320 @@
+// 手札レイアウト編集コンポーネント。Firebase 非依存、DOM のみ。
+//
+// layout = ['か1', '_', 'き2', ...]  ('_' = スペース)
+//
+// 操作(editable のとき):
+//   - カードをタップ → 選択(もう一度タップで解除)。onSelect(cardId|null) を通知
+//   - 選択中に隙間(スロット)をタップ → そこへ移動
+//   - 選択なしで隙間をタップ → スペースを挿入
+//   - スペースをタップ → そのスペースを削除
+//   - カードをドラッグ → 最寄りの隙間へ移動(Pointer Events、タッチ対応)
+//   - undo() で直前の並びに戻す(最大 10 手)
+//
+// 使い方:
+//   const editor = HandUI.createHandEditor(el, { layout, editable: true, onChange, onSelect });
+//   editor.setLayout(newLayout, { drawn: 'か1' });  // サーバーからの更新を反映
+//
+// 生成する DOM(CSS は style.css の .hand / .card / .slot を参照):
+//   <div class="hand">
+//     <button class="slot" data-index="0"></button>
+//     <button class="card" data-id="か1">か</button>
+//     <button class="slot" data-index="1"></button>
+//     <button class="space" data-index="1"></button>
+//     ...
+//     <button class="slot" data-index="N"></button>
+//   </div>
+
+(function (global) {
+  const SPACE = '_';
+  const DRAG_THRESHOLD = 8; // px。これ未満の移動はタップ扱い
+  const MAX_UNDO = 10;
+
+  function defaultCharOf(id) {
+    return global.Cards ? global.Cards.charOf(id) : id.replace(/\d+$/, '');
+  }
+
+  function createHandEditor(container, options) {
+    const opts = Object.assign(
+      { layout: [], editable: true, charOf: defaultCharOf, onChange: null, onSelect: null, size: 'lg' },
+      options || {}
+    );
+
+    let layout = opts.layout.slice();
+    let editable = !!opts.editable;
+    let selectedId = null;
+    let drawnId = null;
+    let highlightIds = []; // 外部から強調したいカード(ポン選択など)
+    const undoStack = [];
+
+    container.classList.add('hand');
+    container.dataset.size = opts.size;
+
+    // ---- 描画 --------------------------------------------------------------
+    function render() {
+      container.innerHTML = '';
+      container.classList.toggle('hand--editable', editable);
+      container.classList.toggle('hand--selecting', !!selectedId);
+      if (editable) container.appendChild(makeSlot(0));
+      layout.forEach((token, i) => {
+        if (token === SPACE) {
+          container.appendChild(makeSpace(i));
+        } else {
+          container.appendChild(makeCard(token));
+        }
+        if (editable) container.appendChild(makeSlot(i + 1));
+      });
+    }
+
+    function makeCard(id) {
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'card';
+      el.dataset.id = id;
+      el.textContent = opts.charOf(id);
+      el.setAttribute('aria-label', opts.charOf(id));
+      if (id === selectedId) el.classList.add('card--selected');
+      if (id === drawnId) el.classList.add('card--drawn');
+      if (highlightIds.indexOf(id) >= 0) el.classList.add('card--highlight');
+      if (editable) {
+        el.addEventListener('pointerdown', onCardPointerDown);
+      } else {
+        el.tabIndex = -1;
+      }
+      return el;
+    }
+
+    function makeSpace(index) {
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'space';
+      el.dataset.index = String(index);
+      el.setAttribute('aria-label', 'スペース(タップで削除)');
+      if (editable) {
+        el.addEventListener('click', () => {
+          pushUndo();
+          layout = layout.slice(0, index).concat(layout.slice(index + 1));
+          commit();
+        });
+      } else {
+        el.tabIndex = -1;
+      }
+      return el;
+    }
+
+    function makeSlot(index) {
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'slot';
+      el.dataset.index = String(index);
+      el.setAttribute('aria-label', selectedId ? 'ここに移動' : 'スペースを入れる');
+      el.addEventListener('click', () => {
+        if (selectedId) {
+          moveCard(selectedId, index);
+          setSelected(null);
+        } else {
+          pushUndo();
+          layout = layout.slice(0, index).concat([SPACE], layout.slice(index));
+          commit();
+        }
+      });
+      return el;
+    }
+
+    // ---- 状態変更 ----------------------------------------------------------
+    function pushUndo() {
+      undoStack.push(layout.slice());
+      if (undoStack.length > MAX_UNDO) undoStack.shift();
+    }
+
+    function commit() {
+      render();
+      if (opts.onChange) opts.onChange(layout.slice());
+    }
+
+    // cardId を「現在の並びにおける index の位置」へ移動(index は削除前の位置基準)
+    function moveCard(cardId, index) {
+      const from = layout.indexOf(cardId);
+      if (from < 0) return;
+      let to = index;
+      if (to > from) to -= 1;
+      if (to === from) { render(); return; }
+      pushUndo();
+      const next = layout.slice(0, from).concat(layout.slice(from + 1));
+      next.splice(to, 0, cardId);
+      layout = next;
+      commit();
+    }
+
+    function setSelected(id) {
+      selectedId = id;
+      render();
+      if (opts.onSelect) opts.onSelect(selectedId);
+    }
+
+    // ---- ドラッグ ----------------------------------------------------------
+    let drag = null; // { id, startX, startY, ghost, active, slots: [{el, x, y}], target }
+
+    function onCardPointerDown(e) {
+      if (!editable || e.button !== 0 && e.pointerType === 'mouse') return;
+      const id = e.currentTarget.dataset.id;
+      drag = { id, startX: e.clientX, startY: e.clientY, ghost: null, active: false, slots: [], target: null, el: e.currentTarget };
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) { /* 合成イベント等 */ }
+      e.currentTarget.addEventListener('pointermove', onCardPointerMove);
+      e.currentTarget.addEventListener('pointerup', onCardPointerUp);
+      e.currentTarget.addEventListener('pointercancel', onCardPointerUp);
+    }
+
+    function onCardPointerMove(e) {
+      if (!drag) return;
+      const dx = e.clientX - drag.startX;
+      const dy = e.clientY - drag.startY;
+      if (!drag.active) {
+        if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+        startDrag(e);
+      }
+      drag.ghost.style.transform = 'translate(' + (e.clientX - drag.gx) + 'px,' + (e.clientY - drag.gy) + 'px)';
+      updateDropTarget(e.clientX, e.clientY);
+    }
+
+    function startDrag(e) {
+      drag.active = true;
+      const rect = drag.el.getBoundingClientRect();
+      const ghost = drag.el.cloneNode(true);
+      ghost.classList.add('card--ghost');
+      ghost.style.position = 'fixed';
+      ghost.style.left = rect.left + 'px';
+      ghost.style.top = rect.top + 'px';
+      ghost.style.width = rect.width + 'px';
+      ghost.style.height = rect.height + 'px';
+      ghost.style.pointerEvents = 'none';
+      ghost.style.zIndex = '1000';
+      document.body.appendChild(ghost);
+      drag.ghost = ghost;
+      drag.gx = e.clientX;
+      drag.gy = e.clientY;
+      drag.el.classList.add('card--dragging');
+      container.classList.add('hand--dragging');
+      drag.slots = Array.from(container.querySelectorAll('.slot')).map((el) => {
+        const r = el.getBoundingClientRect();
+        return { el, x: r.left + r.width / 2, y: r.top + r.height / 2, index: Number(el.dataset.index) };
+      });
+    }
+
+    function updateDropTarget(x, y) {
+      let best = null;
+      let bestD = Infinity;
+      for (const s of drag.slots) {
+        // 行(y)を優先し、同じ行の中で x が近いスロットを選ぶ
+        const d = Math.abs(s.y - y) * 3 + Math.abs(s.x - x);
+        if (d < bestD) { bestD = d; best = s; }
+      }
+      if (drag.target && drag.target !== best) drag.target.el.classList.remove('slot--over');
+      if (best) best.el.classList.add('slot--over');
+      drag.target = best;
+    }
+
+    function onCardPointerUp(e) {
+      if (!drag) return;
+      const el = drag.el;
+      el.removeEventListener('pointermove', onCardPointerMove);
+      el.removeEventListener('pointerup', onCardPointerUp);
+      el.removeEventListener('pointercancel', onCardPointerUp);
+      try { el.releasePointerCapture(e.pointerId); } catch (_) { /* noop */ }
+      const d = drag;
+      drag = null;
+      if (!d.active) {
+        // タップ扱い: 選択のトグル
+        if (e.type !== 'pointercancel') setSelected(selectedId === d.id ? null : d.id);
+        return;
+      }
+      if (d.ghost) d.ghost.remove();
+      el.classList.remove('card--dragging');
+      container.classList.remove('hand--dragging');
+      if (d.target) d.target.el.classList.remove('slot--over');
+      if (e.type !== 'pointercancel' && d.target) {
+        selectedId = null;
+        moveCard(d.id, d.target.index);
+        if (opts.onSelect) opts.onSelect(null);
+      } else {
+        render();
+      }
+    }
+
+    // ---- 公開 API ----------------------------------------------------------
+    const api = {
+      // サーバー等からの更新を反映。選択中カードが消えていれば選択解除。
+      setLayout(next, extra) {
+        const ex = extra || {};
+        if (drag && drag.active) return; // ドラッグ中は上書きしない(終了後に再度 setLayout される想定)
+        layout = next.slice();
+        if (typeof ex.drawn !== 'undefined') drawnId = ex.drawn;
+        if (typeof ex.highlight !== 'undefined') highlightIds = ex.highlight || [];
+        if (selectedId && layout.indexOf(selectedId) < 0) {
+          selectedId = null;
+          if (opts.onSelect) opts.onSelect(null);
+        }
+        render();
+      },
+      getLayout() { return layout.slice(); },
+      getSelected() { return selectedId; },
+      select(id) { setSelected(id); },
+      clearSelection() { if (selectedId) setSelected(null); },
+      setEditable(flag) { editable = !!flag; if (!editable) selectedId = null; render(); },
+      setHighlight(ids) { highlightIds = ids || []; render(); },
+      canUndo() { return undoStack.length > 0; },
+      undo() {
+        if (!undoStack.length) return false;
+        layout = undoStack.pop();
+        selectedId = null;
+        render();
+        if (opts.onChange) opts.onChange(layout.slice());
+        if (opts.onSelect) opts.onSelect(null);
+        return true;
+      },
+      // スペースを全部消して詰める
+      clearSpaces() {
+        if (layout.indexOf(SPACE) < 0) return;
+        pushUndo();
+        layout = layout.filter((t) => t !== SPACE);
+        commit();
+      },
+      destroy() { container.innerHTML = ''; container.classList.remove('hand'); },
+    };
+
+    render();
+    return api;
+  }
+
+  // 読み取り専用の小さな手札(他プレイヤー用)。カードを伏せる場合は count を渡す。
+  function renderReadonlyHand(container, layout, options) {
+    const o = Object.assign({ charOf: defaultCharOf, hidden: false, count: 0, size: 'sm' }, options || {});
+    container.innerHTML = '';
+    container.classList.add('hand');
+    container.dataset.size = o.size;
+    if (o.hidden) {
+      for (let i = 0; i < o.count; i++) {
+        const el = document.createElement('span');
+        el.className = 'card card--back';
+        container.appendChild(el);
+      }
+      return;
+    }
+    layout.forEach((token) => {
+      const el = document.createElement('span');
+      if (token === SPACE) {
+        el.className = 'space';
+      } else {
+        el.className = 'card';
+        el.textContent = o.charOf(token);
+      }
+      container.appendChild(el);
+    });
+  }
+
+  const HandUI = { SPACE, createHandEditor, renderReadonlyHand };
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = HandUI;
+  } else {
+    global.HandUI = HandUI;
+  }
+})(typeof window !== 'undefined' ? window : globalThis);

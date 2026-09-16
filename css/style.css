@@ -1,0 +1,137 @@
+/* ひらがじゃん — 土台の最小スタイル。
+ * Phase B で hallmark トークンに差し替えつつ、UI/UX 方針(ガイドバナー・主操作ボタン・
+ * 2段階捨て札・モバイルファースト)に沿って全面的に整える前提。
+ * 色は必ず var(--color-*) 経由で参照する。 */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-md);
+  color: var(--color-ink);
+  background: var(--color-paper);
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+
+.hidden { display: none !important; }
+
+main { max-width: 720px; margin: 0 auto; padding: var(--space-sm); }
+
+h1 { font-family: var(--font-display); font-size: var(--text-display); margin: 0 0 var(--space-sm); }
+h2 { font-size: var(--text-lg); margin: var(--space-md) 0 var(--space-2xs); }
+
+button {
+  font: inherit;
+  min-height: 44px;
+  padding: var(--space-2xs) var(--space-sm);
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  cursor: pointer;
+}
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+button.primary { background: var(--color-accent); border-color: var(--color-accent-deep); color: var(--color-accent-ink); font-weight: 700; }
+button.danger { background: var(--color-accent-3); border-color: var(--color-accent-3-deep); color: var(--color-accent-3-ink); font-weight: 700; }
+button.ok { background: var(--color-mint); border-color: var(--color-ink-2); font-weight: 700; }
+
+input[type="text"], select {
+  font: inherit;
+  min-height: 44px;
+  padding: var(--space-2xs) var(--space-xs);
+  border: 2px solid var(--color-rule);
+  border-radius: var(--radius-input);
+  background: white;
+  width: 100%;
+}
+
+.row { display: flex; flex-wrap: wrap; gap: var(--space-2xs); align-items: center; }
+.card-box { background: var(--color-paper-2); border-radius: var(--radius-card); padding: var(--space-sm); margin-bottom: var(--space-sm); }
+.muted { color: var(--color-ink-2); font-size: var(--text-sm); }
+.error { color: var(--color-accent-3-deep); min-height: 1.5em; }
+
+/* ガイドバナー: 今なにをすべきかを常に1行で */
+.banner {
+  position: sticky; top: 0; z-index: 10;
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--color-paper-3);
+  border-bottom: 2px solid var(--color-rule);
+  font-weight: 700;
+  text-align: center;
+}
+.banner--mine { background: var(--color-accent); color: var(--color-accent-ink); }
+.banner--claim { background: var(--color-accent-3); color: var(--color-accent-3-ink); }
+
+.room-code { font-family: var(--font-mono); font-size: var(--text-display); letter-spacing: 0.15em; }
+
+/* ---- 手札(hand-ui.js が生成) ---- */
+.hand {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 2px; row-gap: var(--space-2xs);
+  --card-w: clamp(38px, 9vw, 52px);
+  --card-h: calc(var(--card-w) * 1.35);
+  --card-font: calc(var(--card-w) * 0.55);
+}
+.hand[data-size="sm"] { --card-w: clamp(22px, 5vw, 30px); gap: 1px; }
+.hand[data-size="sm"] .card { border-width: 1px; border-radius: 4px; }
+
+.card {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--card-w); height: var(--card-h); min-height: 0; padding: 0;
+  font-size: var(--card-font); font-weight: 700; line-height: 1;
+  background: white; color: var(--color-ink);
+  border: 2px solid var(--color-ink); border-radius: var(--radius-cell);
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  transition: transform 120ms var(--ease-snap);
+}
+.card--selected { transform: translateY(-8px); border-color: var(--color-accent-2-deep); box-shadow: 0 4px 0 var(--color-accent-2); }
+.card--drawn { border-color: var(--color-accent-deep); background: var(--color-accent); }
+.card--highlight { border-color: var(--color-accent-3-deep); box-shadow: 0 0 0 3px var(--color-accent-3); }
+.card--dragging { opacity: 0.3; }
+.card--ghost { opacity: 0.9; transform-origin: center; box-shadow: 0 8px 20px rgba(0,0,0,0.25); }
+.card--back { background: var(--color-ink-2); border-color: var(--color-ink); }
+
+.space {
+  width: calc(var(--card-w) * 0.45); height: var(--card-h); min-height: 0; padding: 0;
+  border: 2px dashed var(--color-rule); border-radius: 6px; background: transparent;
+}
+.hand[data-size="sm"] .space { border-width: 1px; }
+
+/* 挿入スロット: 通常は細く、選択中・ドラッグ中は太くして「ここに置ける」と示す */
+.slot {
+  width: 10px; height: var(--card-h); min-height: 0; padding: 0;
+  border: none; border-radius: 4px; background: transparent;
+}
+.hand--selecting .slot, .hand--dragging .slot { background: var(--color-accent-2); opacity: 0.35; width: 14px; }
+.hand--selecting .slot:hover, .slot--over { opacity: 1 !important; background: var(--color-accent-2-deep) !important; }
+
+/* 固定 meld */
+.meld { display: inline-flex; gap: 1px; padding: 2px; border: 2px solid var(--color-accent-3); border-radius: var(--radius-cell); margin-right: var(--space-2xs); }
+
+/* 他プレイヤー欄 */
+.player { border: 2px solid var(--color-rule); border-radius: var(--radius-card); padding: var(--space-2xs) var(--space-xs); margin-bottom: var(--space-2xs); background: white; }
+.player--turn { border-color: var(--color-accent-2); box-shadow: 0 0 0 2px var(--color-accent-2); }
+.player__name { font-weight: 700; }
+.discards { display: flex; flex-wrap: wrap; gap: 1px; margin-top: 2px; }
+.discards .card:last-child.card--last { border-color: var(--color-accent-3-deep); box-shadow: 0 0 0 2px var(--color-accent-3); }
+
+/* 主操作エリア(画面下に固定) */
+.actions {
+  position: sticky; bottom: 0; z-index: 10;
+  display: flex; flex-wrap: wrap; gap: var(--space-2xs); justify-content: center;
+  padding: var(--space-xs); background: var(--color-paper);
+  border-top: 2px solid var(--color-rule);
+}
+.actions button.primary { flex: 1 1 60%; font-size: var(--text-lg); }
+
+/* あがり宣言モーダル */
+.modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.5); padding: var(--space-sm); }
+.modal__box { background: var(--color-paper); border-radius: var(--radius-card); padding: var(--space-md); max-width: 640px; width: 100%; }
+.words { display: flex; flex-wrap: wrap; gap: var(--space-sm); justify-content: center; margin: var(--space-sm) 0; }
+.word { font-size: var(--text-display); font-weight: 700; padding: var(--space-2xs) var(--space-sm); border: 3px solid var(--color-ink); border-radius: var(--radius-input); background: white; }
+.word--meld { border-color: var(--color-accent-3); }
+
+.toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); z-index: 200; background: var(--color-ink); color: var(--color-paper); padding: var(--space-2xs) var(--space-sm); border-radius: var(--radius-pill); font-size: var(--text-sm); }

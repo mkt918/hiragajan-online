@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>ひらがじゃん オンライン</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&family=Plus+Jakarta+Sans:wght@600;800&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css?v=1">
+  <link rel="stylesheet" href="css/style.css?v=1">
+</head>
+<body>
+
+  <!-- ===== ロビー画面 ===== -->
+  <main id="lobby-screen">
+    <h1>ひらがじゃん</h1>
+    <p id="connection-status" class="muted">接続中…</p>
+
+    <section class="card-box">
+      <label for="name-input">なまえ</label>
+      <input type="text" id="name-input" maxlength="12" placeholder="ニックネーム" autocomplete="nickname">
+    </section>
+
+    <section class="card-box">
+      <h2>部屋をつくる</h2>
+      <div class="row">
+        <label><input type="radio" name="mode" value="basic" checked> きほん(7枚・2+3+3)</label>
+        <label><input type="radio" name="mode" value="advanced"> じょうきゅう(13枚・ポン/ロンあり)</label>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="open-hands-input" checked> 手札をみんなに見せる</label>
+      </div>
+      <div class="row">
+        <label for="claim-seconds-input">ポン/ロンの受付(秒)</label>
+        <select id="claim-seconds-input">
+          <option value="3">3</option>
+          <option value="5" selected>5</option>
+          <option value="8">8</option>
+          <option value="0">なし(次の人が引くまで)</option>
+        </select>
+      </div>
+      <button id="create-room-btn" class="primary" disabled>部屋をつくる</button>
+    </section>
+
+    <section class="card-box">
+      <h2>部屋に入る</h2>
+      <div class="row">
+        <input type="text" id="room-code-input" inputmode="numeric" maxlength="4" placeholder="4けたの部屋コード">
+        <button id="join-room-btn" class="primary" disabled>入る</button>
+      </div>
+    </section>
+    <p id="lobby-error" class="error"></p>
+    <p class="muted"><a href="tests.html">自己検証</a></p>
+  </main>
+
+  <!-- ===== 待機画面(部屋に入ったがゲーム未開始) ===== -->
+  <main id="wait-screen" class="hidden">
+    <h1>部屋 <span id="wait-room-code" class="room-code"></span></h1>
+    <div class="row">
+      <button id="copy-link-btn">リンクをコピー</button>
+      <button id="leave-room-btn">部屋を出る</button>
+    </div>
+    <section class="card-box">
+      <h2>参加者</h2>
+      <ul id="wait-players"></ul>
+      <p id="wait-settings" class="muted"></p>
+    </section>
+    <button id="start-game-btn" class="primary hidden">はじめる</button>
+    <p id="wait-msg" class="muted"></p>
+    <p id="wait-error" class="error"></p>
+  </main>
+
+  <!-- ===== ゲーム画面 ===== -->
+  <div id="game-screen" class="hidden">
+    <div id="banner" class="banner"></div>
+    <main>
+      <div class="row muted">
+        <span>部屋 <strong id="game-room-code"></strong></span>
+        <span>第<span id="round-no"></span>局</span>
+        <span>山札 <strong id="deck-count"></strong> 枚</span>
+        <span id="mode-label"></span>
+      </div>
+
+      <section id="others"></section>
+
+      <section class="card-box">
+        <div class="row">
+          <span class="player__name" id="my-name"></span>
+          <span class="muted" id="my-count"></span>
+          <button id="undo-btn" disabled>もどす</button>
+          <button id="clear-spaces-btn">スペースを消す</button>
+        </div>
+        <div id="words-preview" class="words hidden"></div>
+        <div id="my-melds" class="row"></div>
+        <div id="my-hand"></div>
+        <div id="my-discards" class="discards"></div>
+      </section>
+    </main>
+
+    <div id="actions" class="actions"></div>
+    <div id="modal" class="modal hidden"></div>
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-config.js?v=1"></script>
+  <script src="js/cards.js?v=1"></script>
+  <script src="js/game-logic.js?v=1"></script>
+  <script src="js/hand-ui.js?v=1"></script>
+  <script src="js/app.js?v=1"></script>
+</body>
+</html>

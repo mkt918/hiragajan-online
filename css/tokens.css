@@ -1,0 +1,69 @@
+/* Hallmark tokens · genre: playful · theme: Hum (adapted for an app, not a marketing page) */
+:root {
+  /* paper — cream, never pure white */
+  --color-paper: oklch(97% 0.012 95);
+  --color-paper-2: oklch(94% 0.016 95);
+  --color-paper-3: oklch(91% 0.020 95);
+
+  /* ink — near-black with a cool tilt, never pure black */
+  --color-ink: oklch(20% 0.012 250);
+  --color-ink-2: oklch(42% 0.02 250);
+
+  /* multi-accent: pear = sente / primary, cyan = gote / secondary, coral = pop / win */
+  --color-accent: oklch(86% 0.18 95);
+  --color-accent-deep: oklch(70% 0.16 95);
+  --color-accent-ink: oklch(24% 0.03 95);
+
+  --color-accent-2: oklch(66% 0.18 235);
+  --color-accent-2-deep: oklch(50% 0.16 235);
+  --color-accent-2-ink: oklch(98% 0.01 235);
+
+  --color-accent-3: oklch(68% 0.24 18);
+  --color-accent-3-deep: oklch(52% 0.20 18);
+  --color-accent-3-ink: oklch(98% 0.01 18);
+
+  --color-mint: oklch(80% 0.16 150);
+  --color-focus: oklch(55% 0.20 250);
+  --color-rule: oklch(85% 0.02 95);
+
+  /* type */
+  --font-display: "Plus Jakarta Sans", "M PLUS Rounded 1c", sans-serif;
+  --font-body: "M PLUS Rounded 1c", "Plus Jakarta Sans", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1.05rem;
+  --text-lg: 1.3rem;
+  --text-xl: 1.7rem;
+  --text-display: clamp(1.7rem, 3vw + 1rem, 2.4rem);
+
+  /* 4pt spacing scale */
+  --space-3xs: 0.25rem;
+  --space-2xs: 0.5rem;
+  --space-xs: 0.75rem;
+  --space-sm: 1rem;
+  --space-md: 1.5rem;
+  --space-lg: 2rem;
+  --space-xl: 3rem;
+  --space-2xl: 4.5rem;
+
+  /* radii — Hum is the rounded theme, no square corners */
+  --radius-card: 20px;
+  --radius-pill: 999px;
+  --radius-input: 12px;
+  --radius-cell: 10px;
+
+  /* motion */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-snap: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-short: 140ms;
+  --dur-med: 220ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ease-spring: var(--ease-out);
+  }
+}

@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // rooms/{code}: 1部屋 = 1ドキュメント。全状態(手札・山札含む)をここに置く。
+    match /rooms/{roomCode} {
+      function signedIn() { return request.auth != null; }
+      function isMember() { return signedIn() && request.auth.uid in resource.data.order; }
+      // ロビー中に自分を order の末尾に追加する参加更新
+      function isJoining() {
+        return signedIn()
+          && resource.data.status == 'lobby'
+          && resource.data.order.size() < 4
+          && request.resource.data.order.size() == resource.data.order.size() + 1
+          && request.resource.data.order[resource.data.order.size()] == request.auth.uid;
+      }
+
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.hostUid == request.auth.uid
+        && request.resource.data.order == [request.auth.uid]
+        && request.resource.data.status == 'lobby';
+      allow update: if isMember() || isJoining();
+      allow delete: if false;
+    }
+  }
+}

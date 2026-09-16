@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>自己検証 — ひらがじゃん</title>
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .tests__summary { font-family: var(--font-mono); font-size: var(--text-xl); font-weight: 700; }
+  .tests__summary[data-ok="true"]  { color: var(--color-accent-2-deep); }
+  .tests__summary[data-ok="false"] { color: var(--color-accent-3-deep); }
+  .tests__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2xs); }
+  .tests__item { display: grid; grid-template-columns: 5ch minmax(0, 1fr); gap: var(--space-xs);
+                 padding: var(--space-2xs) var(--space-sm); border: 1px solid var(--color-rule);
+                 border-radius: var(--radius-input); background: var(--color-paper-2); }
+  .tests__mark { font-family: var(--font-mono); font-weight: 700; }
+  .tests__item[data-ok="false"] { border-color: var(--color-accent-3); }
+  .tests__detail { display: block; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-ink-2); overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<main>
+  <h1>自己検証</h1>
+  <p class="tests__summary" id="summary">実行中…</p>
+  <ul class="tests__list" id="list"></ul>
+  <p class="muted">開くだけで走ります。ネットワークは使いません。コマンドラインでは <code>node js/tests.js</code>。</p>
+
+  <h2>手札UIの手動確認</h2>
+  <p class="muted">タップで選択→隙間タップで移動 / 隙間タップでスペース / スペースタップで削除 / ドラッグでも移動。変更内容はコンソールに出ます。</p>
+  <div id="demo-hand"></div>
+  <div class="row" style="margin-top: var(--space-xs)">
+    <button id="demo-undo">もどす</button>
+    <button id="demo-clear">スペースを消す</button>
+    <span id="demo-words" class="muted"></span>
+  </div>
+  <p><a href="index.html">← アプリに戻る</a></p>
+</main>
+
+<script src="js/cards.js"></script>
+<script src="js/game-logic.js"></script>
+<script src="js/hand-ui.js"></script>
+<script src="js/tests.js"></script>
+<script>
+  (function () {
+    const results = window.HiragajanTestResults || [];
+    const list = document.getElementById('list');
+    const summary = document.getElementById('summary');
+    let pass = 0;
+    results.forEach((r) => {
+      if (r.ok) pass++;
+      const li = document.createElement('li');
+      li.className = 'tests__item';
+      li.dataset.ok = String(r.ok);
+      const mark = document.createElement('span');
+      mark.className = 'tests__mark';
+      mark.textContent = r.ok ? 'PASS' : 'FAIL';
+      const body = document.createElement('span');
+      body.textContent = r.name;
+      if (!r.ok) {
+        const d = document.createElement('span');
+        d.className = 'tests__detail';
+        d.textContent = r.detail;
+        body.appendChild(d);
+      }
+      li.appendChild(mark);
+      li.appendChild(body);
+      list.appendChild(li);
+    });
+    summary.textContent = pass + ' / ' + results.length + ' passed';
+    summary.dataset.ok = String(pass === results.length);
+
+    // hand-ui デモ
+    const words = document.getElementById('demo-words');
+    const layout = ['く1', 'つ1', '_', 'た1', 'ぬ1', 'き1', '_', 'は1', 'さ1', 'み1'];
+    const editor = HandUI.createHandEditor(document.getElementById('demo-hand'), {
+      layout,
+      onChange: (l) => { console.log('layout', l); words.textContent = Cards.layoutToWords(l).join(' / '); },
+      onSelect: (id) => console.log('select', id),
+    });
+    editor.setLayout(layout, { drawn: 'み1' });
+    words.textContent = Cards.layoutToWords(layout).join(' / ');
+    document.getElementById('demo-undo').addEventListener('click', () => editor.undo());
+    document.getElementById('demo-clear').addEventListener('click', () => editor.clearSpaces());
+  })();
+</script>
+</body>
+</html>
