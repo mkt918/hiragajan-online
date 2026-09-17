@@ -219,13 +219,11 @@
     }
   }
 
-  // CPU の「あがり」判断確率。
-  // 注意: 配布枚数+1=あがり枚数(基本7→8、上級13→14)という設計上、
-  // ツモ直後・ポン直後は「枚数だけ」なら毎回あがり宣言できてしまう(役の妥当性は判定しない設計のため)。
-  // 100%の確率で宣言すると CPU が毎ターン即あがってしまい、ポンや長い局を検証できないので、
-  // わざと低い確率に抑えて「たまに勝負がつく」程度にしている。
-  const CPU_TSUMO_CHANCE = 0.12;
-  const CPU_RON_CHANCE = 0.15;
+  // CPU は「あがり」(ツモ・ロン)を一切しない。
+  // 配布枚数+1=あがり枚数(基本7→8、上級13→14)という設計上、ツモ直後・ポン直後は
+  // 「枚数だけ」なら毎回あがり宣言できてしまう(役の妥当性は判定しない設計のため)。
+  // CPU にあがり判断をさせると際限なく終局してしまうので、あがりは常に人間だけが行う。
+  // ポンは局を進める(終わらせない)操作なので CPU にも許可している。
   const CPU_PON_CHANCE = 0.3;
 
   // CPU の1手を room に直接適用する(Firebase を経由しない)
@@ -243,14 +241,14 @@
 
   // 今 CPU がすることがあれば少し間を置いて cpuTick を呼ぶ。無ければ何もしない
   // (renderGame の末尾から毎回呼ばれ、人間の番になったら自然に止まる)
+  // CPU はあがらないので、あがり宣言中(declare)は常に人間の宣言 → 人間の操作待ち。CPU の出番はない。
   function scheduleCpu() {
     clearTimeout(cpuTimer);
     cpuTimer = null;
     if (!practiceMode || !room || !room.round) return;
     const r = room.round;
     let needsBot = false;
-    if (r.phase === 'declare') needsBot = r.declaration.uid !== uid;
-    else if (r.phase === 'claim') needsBot = true; // 何もすることがなければ cpuTick が無視する
+    if (r.phase === 'claim') needsBot = true; // 何もすることがなければ cpuTick が無視する
     else if (r.phase === 'draw' || r.phase === 'discard') needsBot = L.currentUid(room) !== uid;
     if (needsBot) cpuTimer = setTimeout(cpuTick, 700);
   }
@@ -258,10 +256,6 @@
   function cpuTick() {
     if (!practiceMode || !room || !room.round) return;
     const r = room.round;
-    if (r.phase === 'declare') {
-      if (r.declaration.uid !== uid) applyLocal('confirmWin', r.declaration.uid);
-      return;
-    }
     if (r.phase === 'claim') {
       if (cpuActClaim()) return;
       if (L.claimExpired(room, Date.now())) {
@@ -274,22 +268,18 @@
     if (cur === uid) return;
     if (r.phase === 'draw') { applyLocal('draw', cur); return; }
     if (r.phase === 'discard') {
-      const hand = r.hands[cur];
-      if (L.canDeclare(room, cur) && Math.random() < CPU_TSUMO_CHANCE) { applyLocal('declareWin', cur, 'tsumo'); return; }
-      const cards = L.cardsOf(hand);
+      const cards = L.cardsOf(r.hands[cur]);
       const pick = cards[Math.floor(Math.random() * cards.length)];
       applyLocal('discard', cur, pick);
     }
   }
 
-  // ポン・ロンの受付中、人間以外の候補者に代わって CPU の判断をする(誰か1体が行動したら true)
+  // ポン受付中、人間以外の候補者に代わって CPU の判断をする(誰か1体が行動したら true)。
+  // CPU はロンをしない(あがりは常に人間だけ)。
   function cpuActClaim() {
     const r = room.round;
     const candidates = room.order.filter((u) => u !== uid && u !== r.lastDiscard.uid && r.claim.passed.indexOf(u) < 0);
     if (!candidates.length) return false;
-    for (const bot of candidates) {
-      if (L.canDeclare(room, bot) && Math.random() < CPU_RON_CHANCE) return applyLocal('declareWin', bot, 'ron');
-    }
     for (const bot of candidates) {
       const cards = L.cardsOf(r.hands[bot]);
       if (cards.length >= 2 && Math.random() < CPU_PON_CHANCE) return applyLocal('pon', bot, cards.slice(0, 2));
@@ -488,7 +478,7 @@
       });
       body.appendChild(hand);
       p.appendChild(body);
-      p.appendChild(discardsEl(u));
+      p.appendChild(discardsEl(u, '🗑️ ' + nameOf(u) + 'の捨て札'));
       box.appendChild(p);
     });
   }
@@ -506,19 +496,34 @@
     return d;
   }
 
-  function discardsEl(u) {
+  // 捨て札を「ラベル付きの箱」として描画する(手札や場札と混同されないように区別する)
+  function discardsEl(u, label) {
     const r = room.round;
+    const wrap = document.createElement('div');
+    wrap.className = 'discard-pile';
+    const lab = document.createElement('p');
+    lab.className = 'discard-pile__label';
+    lab.textContent = label;
+    wrap.appendChild(lab);
     const d = document.createElement('div');
     d.className = 'discards hand';
     d.dataset.size = 'sm';
-    r.discards[u].forEach((id, i, arr) => {
-      const c = document.createElement('span');
-      c.className = 'card';
-      if (r.lastDiscard && r.lastDiscard.uid === u && i === arr.length - 1) c.classList.add('card--last');
-      c.textContent = C.charOf(id);
-      d.appendChild(c);
-    });
-    return d;
+    if (r.discards[u].length === 0) {
+      const empty = document.createElement('span');
+      empty.className = 'discard-pile__empty';
+      empty.textContent = 'まだありません';
+      d.appendChild(empty);
+    } else {
+      r.discards[u].forEach((id, i, arr) => {
+        const c = document.createElement('span');
+        c.className = 'card';
+        if (r.lastDiscard && r.lastDiscard.uid === u && i === arr.length - 1) c.classList.add('card--last');
+        c.textContent = C.charOf(id);
+        d.appendChild(c);
+      });
+    }
+    wrap.appendChild(d);
+    return wrap;
   }
 
   function renderMyHand() {
@@ -552,7 +557,7 @@
 
     const mine = el('my-discards');
     mine.innerHTML = '';
-    mine.appendChild(discardsEl(uid));
+    mine.appendChild(discardsEl(uid, '🗑️ 自分の捨て札'));
   }
 
   // 宣言中の宣言者に、現在の並びを言葉ごとに区切って見せる

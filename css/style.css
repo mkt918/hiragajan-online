@@ -185,14 +185,27 @@ input[type="text"], select {
 }
 .hand[data-size="sm"] .space { border-width: 1px; }
 
-/* 挿入スロット: 通常は細く、選択中・ドラッグ中は太くして「ここに置ける」と示す */
+/* 挿入スロット: 「+」を常時薄く表示してスペースを入れられることに気づけるようにする。
+ * 選択中・ドラッグ中は「ここに移動」の意味に変わるので + を消し、色で示す。 */
 .slot {
-  width: 10px; height: var(--card-h); min-height: 0; padding: 0;
+  width: 16px; height: var(--card-h); min-height: 0; padding: 0;
   border: none; border-radius: 4px; background: transparent;
+  position: relative;
   transition: background var(--dur-short) var(--ease-out), width var(--dur-short) var(--ease-out);
 }
-.hand--selecting .slot, .hand--dragging .slot { background: var(--color-accent-2); opacity: 0.35; width: 16px; }
-.hand--selecting .slot:hover, .slot--over { opacity: 1 !important; background: var(--color-accent-2-deep) !important; width: 20px !important; }
+.slot::after {
+  content: '+';
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 800; line-height: 1;
+  color: var(--color-accent-2-deep);
+  opacity: 0.5;
+  pointer-events: none;
+}
+.hand[data-size="sm"] .slot::after { font-size: 10px; }
+.hand--selecting .slot, .hand--dragging .slot { background: var(--color-accent-2); opacity: 0.35; width: 22px; }
+.hand--selecting .slot::after, .hand--dragging .slot::after { content: ''; }
+.hand--selecting .slot:hover, .slot--over { opacity: 1 !important; background: var(--color-accent-2-deep) !important; width: 26px !important; }
 
 /* 固定 meld */
 .meld { display: inline-flex; gap: 1px; padding: 3px; border: 2px solid var(--color-accent-3); border-radius: var(--radius-cell); margin-right: var(--space-2xs); background: color-mix(in oklch, var(--color-accent-3) 12%, white); }
@@ -202,8 +215,20 @@ input[type="text"], select {
 .player { border: 2px solid var(--color-rule); border-radius: var(--radius-card); padding: var(--space-2xs) var(--space-xs); background: white; transition: border-color var(--dur-med) var(--ease-out), box-shadow var(--dur-med) var(--ease-out); min-width: 0; }
 .player--turn { border-color: var(--color-accent-2); box-shadow: 0 0 0 2px var(--color-accent-2); }
 .player__name { font-weight: 800; overflow-wrap: anywhere; }
-.discards { display: flex; flex-wrap: wrap; gap: 1px; margin-top: 2px; }
-.discards .card:last-child.card--last { border-color: var(--color-accent-3-deep); box-shadow: 0 0 0 2px var(--color-accent-3); }
+
+/* 手札や場札(meld)と混同しないよう、捨て札は薄いグレーの箱にラベル付きで囲む */
+.discard-pile {
+  margin-top: var(--space-2xs); padding: var(--space-2xs) var(--space-xs);
+  background: var(--color-paper-3); border-radius: var(--radius-input);
+}
+.discard-pile__label { margin: 0 0 2px; font-size: var(--text-xs); font-weight: 700; color: var(--color-ink-2); }
+.discard-pile__empty { font-size: var(--text-xs); color: var(--color-ink-2); }
+.discards { display: flex; flex-wrap: wrap; gap: 1px; }
+.discards .card { filter: saturate(0.7) brightness(0.98); } /* 手札のカードと見た目で区別する */
+.discards .card:last-child.card--last { border-color: var(--color-accent-3-deep); box-shadow: 0 0 0 2px var(--color-accent-3); filter: none; }
+
+/* 手札の下のヒント */
+.hand-hint { margin: var(--space-3xs) 0 0; font-size: var(--text-xs); color: var(--color-ink-2); }
 
 .my-area { position: relative; }
 
