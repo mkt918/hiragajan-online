@@ -159,11 +159,20 @@ input[type="text"], select {
   --card-h: calc(var(--card-w) * 1.35);
   --card-font: calc(var(--card-w) * 0.55);
 }
+/* 自分の手札(lg)は2段に折り返さず、収まらない分は横スクロールで見る */
+.hand[data-size="lg"] {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: var(--space-3xs);
+}
 .hand[data-size="sm"] { --card-w: clamp(20px, 5.5vw, 30px); gap: 1px; }
 .hand[data-size="sm"] .card { border-width: 1px; border-radius: 4px; }
 
 .card {
-  display: inline-flex; align-items: center; justify-content: center;
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
   width: var(--card-w); height: var(--card-h); min-height: 0; padding: 0;
   font-size: var(--card-font); font-weight: 800; line-height: 1; font-family: var(--font-display);
   background: white; color: var(--color-ink);
@@ -172,15 +181,18 @@ input[type="text"], select {
   touch-action: none; user-select: none; -webkit-user-select: none;
   transition: transform var(--dur-short) var(--ease-snap), box-shadow var(--dur-short) var(--ease-snap);
 }
-.card--selected { transform: translateY(-8px); border-color: var(--color-accent-2-deep); box-shadow: 0 6px 0 var(--color-accent-2); }
+/* 選択中(=捨てる候補)は「捨てる」と同じ朱色で示す。手番・情報の藍色(accent-2)とは混同させない */
+.card--selected { transform: translateY(-8px); border-color: var(--color-accent-3-deep); box-shadow: 0 6px 0 var(--color-accent-3); }
 .card--drawn { border-color: var(--color-accent-deep); background: color-mix(in oklch, var(--color-accent) 55%, white); }
 .card--highlight { border-color: var(--color-accent-3-deep); box-shadow: 0 0 0 3px var(--color-accent-3); }
 .card--dragging { opacity: 0.3; }
 .card--ghost { opacity: 0.92; transform-origin: center; box-shadow: var(--shadow-lift); }
+/* 捨てるゾーンの上にドラッグしている間、持ち上げているカード自体も朱色にして「捨てる」ことを予告する */
+.card--ghost-drop { border-color: var(--color-accent-3-deep) !important; background: color-mix(in oklch, var(--color-accent-3) 30%, white) !important; transform: scale(1.08); }
 .card--back { background: var(--color-ink-2); border-color: var(--color-ink); }
 
 .space {
-  width: calc(var(--card-w) * 0.45); height: var(--card-h); min-height: 0; padding: 0;
+  width: calc(var(--card-w) * 0.45); height: var(--card-h); min-height: 0; padding: 0; flex-shrink: 0;
   border: 2px dashed var(--color-rule); border-radius: 6px; background: transparent;
 }
 .hand[data-size="sm"] .space { border-width: 1px; }
@@ -188,7 +200,7 @@ input[type="text"], select {
 /* 挿入スロット: 「+」を常時薄く表示してスペースを入れられることに気づけるようにする。
  * 選択中・ドラッグ中は「ここに移動」の意味に変わるので + を消し、色で示す。 */
 .slot {
-  width: 16px; height: var(--card-h); min-height: 0; padding: 0;
+  width: 16px; height: var(--card-h); min-height: 0; padding: 0; flex-shrink: 0;
   border: none; border-radius: 4px; background: transparent;
   position: relative;
   transition: background var(--dur-short) var(--ease-out), width var(--dur-short) var(--ease-out);
@@ -229,6 +241,28 @@ input[type="text"], select {
 
 /* 手札の下のヒント */
 .hand-hint { margin: var(--space-3xs) 0 0; font-size: var(--text-xs); color: var(--color-ink-2); }
+
+/* 捨てるゾーン: カードをドラッグして落とす、または選んでからタップして確定する共通の窓口。
+ * 「選択中カード」と同じ朱色を使い、視覚的に「ここに置けば捨てられる」と繋がるようにする。 */
+.discard-zone {
+  width: 100%; margin-top: var(--space-xs);
+  min-height: 48px;
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  padding: var(--space-2xs) var(--space-sm);
+  border: 2px dashed var(--color-rule); border-radius: var(--radius-input);
+  background: var(--color-paper-3); color: var(--color-ink-2);
+  font-size: var(--text-sm); font-weight: 700;
+  transition: background var(--dur-med) var(--ease-out), border-color var(--dur-med) var(--ease-out),
+              color var(--dur-med) var(--ease-out), transform var(--dur-short) var(--ease-snap);
+}
+.discard-zone--active {
+  border-style: solid; border-color: var(--color-accent-3-deep); cursor: pointer;
+  background: color-mix(in oklch, var(--color-accent-3) 16%, white); color: var(--color-accent-3-deep);
+}
+.discard-zone--over {
+  background: var(--color-accent-3); border-color: var(--color-accent-3-deep);
+  color: var(--color-accent-3-ink); transform: scale(1.03);
+}
 
 .my-area { position: relative; }
 

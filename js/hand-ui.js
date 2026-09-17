@@ -8,11 +8,14 @@
 //   - 選択なしで隙間をタップ → スペースを挿入
 //   - スペースをタップ → そのスペースを削除
 //   - カードをドラッグ → 最寄りの隙間へ移動(Pointer Events、タッチ対応)
+//   - ドロップゾーン(setDropZone で指定した外部の DOM 要素)へカードをドラッグ →
+//     並べ替えではなく onDropToZone(cardId) を通知(捨てる操作などに使う)
 //   - undo() で直前の並びに戻す(最大 10 手)
 //
 // 使い方:
-//   const editor = HandUI.createHandEditor(el, { layout, editable: true, onChange, onSelect });
+//   const editor = HandUI.createHandEditor(el, { layout, editable: true, onChange, onSelect, onDropToZone, onDragOverZone });
 //   editor.setLayout(newLayout, { drawn: 'か1' });  // サーバーからの更新を反映
+//   editor.setDropZone(zoneEl);  // 毎レンダー呼び直してよい。null で無効化
 //
 // 生成する DOM(CSS は style.css の .hand / .card / .slot を参照):
 //   <div class="hand">
@@ -44,6 +47,7 @@
     let selectedId = null;
     let drawnId = null;
     let highlightIds = []; // 外部から強調したいカード(ポン選択など)
+    let dropZone = opts.dropZone || null; // 捨てる、など「並べ替え以外」のドラッグ先
     const undoStack = [];
 
     container.classList.add('hand');
@@ -173,7 +177,23 @@
         startDrag(e);
       }
       drag.ghost.style.transform = 'translate(' + (e.clientX - drag.gx) + 'px,' + (e.clientY - drag.gy) + 'px)';
-      updateDropTarget(e.clientX, e.clientY);
+      const overZone = isOverZone(e.clientX, e.clientY);
+      if (overZone !== drag.overZone) {
+        drag.overZone = overZone;
+        drag.ghost.classList.toggle('card--ghost-drop', overZone);
+        if (opts.onDragOverZone) opts.onDragOverZone(overZone);
+      }
+      if (overZone) {
+        // ゾーン上にいる間は並べ替え先のハイライトを消す(移動先ではなく別の操作先だと示す)
+        if (drag.target) { drag.target.el.classList.remove('slot--over'); drag.target = null; }
+      } else {
+        updateDropTarget(e.clientX, e.clientY);
+      }
+    }
+
+    function isOverZone(x, y) {
+      if (!drag.zoneRect) return false;
+      return x >= drag.zoneRect.left && x <= drag.zoneRect.right && y >= drag.zoneRect.top && y <= drag.zoneRect.bottom;
     }
 
     function startDrag(e) {
@@ -192,6 +212,8 @@
       drag.ghost = ghost;
       drag.gx = e.clientX;
       drag.gy = e.clientY;
+      drag.overZone = false;
+      drag.zoneRect = dropZone ? dropZone.getBoundingClientRect() : null;
       drag.el.classList.add('card--dragging');
       container.classList.add('hand--dragging');
       drag.slots = Array.from(container.querySelectorAll('.slot')).map((el) => {
@@ -231,7 +253,13 @@
       el.classList.remove('card--dragging');
       container.classList.remove('hand--dragging');
       if (d.target) d.target.el.classList.remove('slot--over');
-      if (e.type !== 'pointercancel' && d.target) {
+      if (opts.onDragOverZone) opts.onDragOverZone(false);
+      if (e.type !== 'pointercancel' && d.overZone && opts.onDropToZone) {
+        selectedId = null;
+        render();
+        if (opts.onSelect) opts.onSelect(null);
+        opts.onDropToZone(d.id);
+      } else if (e.type !== 'pointercancel' && d.target) {
         selectedId = null;
         moveCard(d.id, d.target.index);
         if (opts.onSelect) opts.onSelect(null);
@@ -261,6 +289,7 @@
       clearSelection() { if (selectedId) setSelected(null); },
       setEditable(flag) { editable = !!flag; if (!editable) selectedId = null; render(); },
       setHighlight(ids) { highlightIds = ids || []; render(); },
+      setDropZone(zoneEl) { dropZone = zoneEl || null; },
       canUndo() { return undoStack.length > 0; },
       undo() {
         if (!undoStack.length) return false;

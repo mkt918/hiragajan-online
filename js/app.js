@@ -547,12 +547,16 @@
         layout,
         onChange: (l) => { scheduleLayout(l); el('undo-btn').disabled = !handEditor.canUndo(); renderWordsPreview(l); },
         onSelect: onHandSelect,
+        // 捨てるゾーンへドラッグ&ドロップされたら、そのまま捨てる(タップ選択と同じ act を呼ぶ)
+        onDropToZone: (cardId) => act('discard', cardId),
+        onDragOverZone: (isOver) => el('discard-zone').classList.toggle('discard-zone--over', isOver),
       });
     }
     renderWordsPreview(layout);
     const editable = r.phase !== 'result';
     handEditor.setEditable(editable);
     handEditor.setLayout(layout, { drawn: r.drawnCard && L.currentUid(room) === uid ? r.drawnCard : null, highlight: ponPick || [] });
+    handEditor.setDropZone(r.phase === 'discard' && L.currentUid(room) === uid ? el('discard-zone') : null);
     el('undo-btn').disabled = !handEditor.canUndo();
 
     const mine = el('my-discards');
@@ -623,21 +627,10 @@
       if (cur === uid) add('ツモ(1枚引く)', 'primary', () => act('draw'));
       else add('待っています…', '', null, true);
     } else if (r.phase === 'discard') {
-      if (cur === uid) {
-        if (selectedCardId) {
-          add('「' + C.charOf(selectedCardId) + '」を捨てる', 'primary', () => {
-            const id = selectedCardId;
-            selectedCardId = null;
-            handEditor.clearSelection();
-            act('discard', id);
-          });
-        } else {
-          add('捨てるカードをタップしてね', '', null, true);
-        }
-        declareBtn();
-      } else {
-        add('待っています…', '', null, true);
-      }
+      // 捨てる操作は手札の下の「捨てるゾーン」で行う(タップして選択→ゾーンをタップ、またはドラッグ)。
+      // ここにはあがりボタンだけ置く。
+      if (cur === uid) declareBtn();
+      else add('待っています…', '', null, true);
     } else if (r.phase === 'claim') {
       const nextUid = room.order[(r.turnIndex + 1) % room.order.length];
       if (r.lastDiscard.uid === uid) {
@@ -660,6 +653,21 @@
       add('取り消し', '', () => act('cancelWin'));
     }
     // result はモーダル側で操作する
+    renderDiscardZone();
+  }
+
+  // 手札の下の「捨てるゾーン」の表示を選択状態に合わせて更新する
+  function renderDiscardZone() {
+    const r = room.round;
+    const zone = el('discard-zone');
+    const active = r.phase === 'discard' && L.currentUid(room) === uid;
+    zone.classList.toggle('hidden', !active);
+    if (!active) { zone.textContent = ''; zone.disabled = true; return; }
+    zone.disabled = !selectedCardId;
+    zone.classList.toggle('discard-zone--active', !!selectedCardId);
+    zone.textContent = selectedCardId
+      ? '🗑️ 「' + C.charOf(selectedCardId) + '」をここに捨てる'
+      : '🗑️ カードをここへドラッグ、またはタップして選んでからここをタップ';
   }
 
   function renderModal() {
@@ -770,6 +778,12 @@
     el('start-game-btn').addEventListener('click', () => act('startGame'));
     el('undo-btn').addEventListener('click', () => { if (handEditor) handEditor.undo(); });
     el('clear-spaces-btn').addEventListener('click', () => { if (handEditor) handEditor.clearSpaces(); });
+    el('discard-zone').addEventListener('click', () => {
+      const id = handEditor && handEditor.getSelected();
+      if (!id) return; // 未選択でのタップは何もしない(ドラッグ&ドロップは別経路で処理される)
+      handEditor.clearSelection();
+      act('discard', id);
+    });
     window.addEventListener('beforeunload', () => { flushLayout(); });
   }
 
