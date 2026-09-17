@@ -25,7 +25,7 @@
     : global.Cards;
   const SPACE = Cards.SPACE;
 
-  const MAX_PLAYERS = 4;
+  const MAX_PLAYERS = 8;
   const MIN_PLAYERS = 2;
 
   function dealCount(mode) { return mode === 'advanced' ? 13 : 7; }
@@ -377,7 +377,7 @@
   function joinRoom(room, uid, name, now) {
     if (isPlayer(room, uid)) return ok(clone(room)); // 再入室
     if (room.status !== 'lobby') return err('このゲームはすでに始まっています');
-    if (room.order.length >= MAX_PLAYERS) return err('部屋は満員です(最大4人)');
+    if (room.order.length >= MAX_PLAYERS) return err('部屋は満員です(最大8人)');
     const next = clone(room);
     next.players[uid] = { name: name || 'プレイヤー', wins: 0, joinedAt: now || Date.now() };
     next.order = next.order.concat([uid]);

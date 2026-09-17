@@ -101,6 +101,12 @@ input[type="text"], select {
 .mode-option__desc { font-size: var(--text-xs); color: var(--color-ink-2); }
 
 .settings-row { margin-bottom: var(--space-sm); }
+
+/* ---- 練習モード(ロビー) ---- */
+.practice-divider { display: flex; align-items: center; gap: var(--space-xs); margin: var(--space-sm) 0; color: var(--color-ink-2); font-size: var(--text-xs); }
+.practice-divider::before, .practice-divider::after { content: ''; flex: 1; height: 1px; background: var(--color-rule); }
+.practice-row { margin-bottom: var(--space-2xs); }
+.practice-row button { flex: 1 1 auto; }
 .check-pill, .select-pill {
   display: inline-flex; align-items: center; gap: var(--space-3xs);
   padding: var(--space-2xs) var(--space-xs); border: 2px solid var(--color-rule); border-radius: var(--radius-pill);

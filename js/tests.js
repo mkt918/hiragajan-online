@@ -105,15 +105,17 @@
   });
 
   // ---- ロビー -------------------------------------------------------------
-  test('部屋作成→参加→4人で満員、5人目は拒否', () => {
+  test('部屋作成→参加→8人(MAX_PLAYERS)で満員、9人目は拒否', () => {
+    assertEqual(L.MAX_PLAYERS, 8);
     let room = L.createRoom({ uid: 'h', name: 'host', mode: 'basic' });
     assertEqual(room.order, ['h']);
-    room = must(L.joinRoom(room, 'a', 'A'));
-    room = must(L.joinRoom(room, 'b', 'B'));
-    room = must(L.joinRoom(room, 'c', 'C'));
-    mustFail(L.joinRoom(room, 'd', 'D'));
+    for (const id of ['a', 'b', 'c', 'd', 'e', 'f', 'g']) {
+      room = must(L.joinRoom(room, id, id.toUpperCase()));
+    }
+    assertEqual(room.order.length, 8);
+    mustFail(L.joinRoom(room, 'z', 'Z'));
     // 再入室は成功する
-    assertEqual(must(L.joinRoom(room, 'a', 'A')).order.length, 4);
+    assertEqual(must(L.joinRoom(room, 'a', 'A')).order.length, 8);
   });
   test('1人では開始できない・ホスト以外は開始できない', () => {
     const room = L.createRoom({ uid: 'h', mode: 'basic' });
@@ -137,6 +139,18 @@
     assertEqual(room.round.deck.length, 120 - 21);
     assertEqual(room.round.phase, 'draw');
     assertConservation(room);
+  });
+  test('8人フル卓でも配布・保存則が保たれる(基本7枚・上級13枚)', () => {
+    const basic = makeRoom('basic', 8, 20);
+    assertEqual(basic.order.length, 8);
+    for (const uid of basic.order) assertEqual(L.cardsOf(basic.round.hands[uid]).length, 7);
+    assertEqual(basic.round.deck.length, 120 - 7 * 8);
+    assertConservation(basic);
+
+    const advanced = makeRoom('advanced', 8, 21);
+    for (const uid of advanced.order) assertEqual(L.cardsOf(advanced.round.hands[uid]).length, 13);
+    assertEqual(advanced.round.deck.length, 120 - 13 * 8);
+    assertConservation(advanced);
   });
   test('基本: ツモ→捨てで手番が回る、手番外は拒否', () => {
     let room = makeRoom('basic', 2, 2);

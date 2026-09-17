@@ -9,7 +9,7 @@ service cloud.firestore {
       function isJoining() {
         return signedIn()
           && resource.data.status == 'lobby'
-          && resource.data.order.size() < 4
+          && resource.data.order.size() < 8
           && request.resource.data.order.size() == resource.data.order.size() + 1
           && request.resource.data.order[resource.data.order.size()] == request.auth.uid;
       }

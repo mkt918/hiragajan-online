@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>ひらがじゃん オンライン</title>
-  <meta name="description" content="ひらがなカードで言葉を揃える対戦ゲーム「ひらがじゃん」。2〜4人でリアルタイム対戦。">
+  <meta name="description" content="ひらがなカードで言葉を揃える対戦ゲーム「ひらがじゃん」。2〜8人でリアルタイム対戦。">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%80%84%3C/text%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,7 +19,7 @@
     <header class="hero">
       <p class="hero__kicker">ひらがな対戦カードゲーム</p>
       <h1 class="hero__title">🀄 ひらがじゃん</h1>
-      <p class="hero__lead">ひらがなカードを揃えて言葉をつくろう。2〜4人でリアルタイム対戦。</p>
+      <p class="hero__lead">ひらがなカードを揃えて言葉をつくろう。2〜8人でリアルタイム対戦。</p>
     </header>
     <p id="connection-status" class="status-pill">接続中…</p>
 
@@ -55,6 +55,24 @@
         </label>
       </div>
       <button id="create-room-btn" class="primary btn-lg" disabled>部屋をつくる</button>
+
+      <div class="practice-divider"><span>または</span></div>
+      <div class="row practice-row">
+        <label class="select-pill">
+          CPU人数
+          <select id="cpu-count-input">
+            <option value="1" selected>1人</option>
+            <option value="2">2人</option>
+            <option value="3">3人</option>
+            <option value="4">4人</option>
+            <option value="5">5人</option>
+            <option value="6">6人</option>
+            <option value="7">7人</option>
+          </select>
+        </label>
+        <button id="practice-btn" class="btn-lg">🤖 ひとりで練習</button>
+      </div>
+      <p class="muted">上のルール設定のまま、CPU相手にひとりで試せます。CPUは自動でツモ・捨て・ポン・ロン・あがりを行いますが、言葉になっているかは確認しません(動作確認用)。</p>
     </section>
 
     <section class="card-box">
@@ -105,7 +123,7 @@
     <div id="banner" class="banner"></div>
     <main>
       <div class="hud row">
-        <span class="hud__item">部屋 <strong id="game-room-code"></strong></span>
+        <span class="hud__item" id="hud-room-item">部屋 <strong id="game-room-code"></strong></span>
         <span class="hud__item">第<span id="round-no"></span>局</span>
         <span class="hud__item">🂠 山札 <strong id="deck-count"></strong>枚</span>
         <span class="hud__item hud__mode" id="mode-label"></span>

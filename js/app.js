@@ -20,14 +20,17 @@
   const C = window.Cards;
 
   let auth, db;
-  let uid = null;
+  let uid = null; // 現在の「自分」の識別子。オンライン中は realUid、練習モード中は 'you'
+  let realUid = null; // Firebase 匿名認証の本物の uid(練習モードから戻すときに使う)
   let roomCode = null;
-  let room = null; // 最新の rooms/{code} ドキュメント
+  let room = null; // 最新の rooms/{code} ドキュメント、または練習モードのローカル room
   let unsubscribeRoom = null;
   let handEditor = null;
   let selectedCardId = null; // 手札で選択中のカード(捨てる候補)
   let ponPick = null; // ポン用に選んだ手札 [id, id] / null = ポン選択中ではない
   let claimTimer = null;
+  let practiceMode = false; // 練習モード(Firebase を使わずローカルで CPU と対戦)
+  let cpuTimer = null;
 
   // レイアウトのデバウンス送信
   let pendingLayout = null;
@@ -56,7 +59,8 @@
     });
     auth.onAuthStateChanged((user) => {
       if (!user) return;
-      uid = user.uid;
+      realUid = user.uid;
+      if (!practiceMode) uid = realUid;
       el('connection-status').textContent = '接続完了。部屋をつくるか、部屋コードを入れてね。';
       el('create-room-btn').disabled = false;
       el('join-room-btn').disabled = false;
@@ -158,6 +162,18 @@
   }
 
   async function leaveRoom() {
+    if (practiceMode) {
+      practiceMode = false;
+      clearTimeout(cpuTimer);
+      cpuTimer = null;
+      uid = realUid; // 本物の Firebase uid に戻す
+      room = null;
+      roomCode = null;
+      selectedCardId = null;
+      ponPick = null;
+      showScreen('lobby');
+      return;
+    }
     // ロビー中なら参加者リストからも抜ける。ゲーム中は購読解除のみ(再入室できる)
     if (room && room.status === 'lobby' && L.isPlayer(room, uid)) {
       try { await runAction('leaveRoom'); } catch (_) { /* noop */ }
@@ -175,10 +191,128 @@
   }
 
   // ---------------------------------------------------------------------------
-  // ゲーム操作: トランザクションで GameLogic を適用
+  // 練習モード: Firebase を使わず、ブラウザの中だけで CPU と対戦する。
+  // 動作確認用(2台目の端末なしで一通りの流れを試せる)。
+  // ---------------------------------------------------------------------------
+  function startPractice() {
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    const openHands = el('open-hands-input').checked;
+    const claimSeconds = Number(el('claim-seconds-input').value);
+    const cpuCount = Number(el('cpu-count-input').value) || 1;
+    const name = myName() || 'あなた';
+
+    uid = 'you';
+    practiceMode = true;
+    roomCode = null;
+
+    let r = L.createRoom({ uid, name, mode, openHands, claimSeconds, now: Date.now() });
+    for (let i = 1; i <= cpuCount; i++) {
+      r = must(L.joinRoom(r, 'cpu' + i, 'CPU' + i, Date.now()));
+    }
+    r = must(L.startGame(r, uid, {}));
+    room = r;
+    render();
+
+    function must(res) {
+      if (res.error) { console.error('practice setup failed:', res.error); throw new Error(res.error); }
+      return res.room;
+    }
+  }
+
+  // CPU の「あがり」判断確率。
+  // 注意: 配布枚数+1=あがり枚数(基本7→8、上級13→14)という設計上、
+  // ツモ直後・ポン直後は「枚数だけ」なら毎回あがり宣言できてしまう(役の妥当性は判定しない設計のため)。
+  // 100%の確率で宣言すると CPU が毎ターン即あがってしまい、ポンや長い局を検証できないので、
+  // わざと低い確率に抑えて「たまに勝負がつく」程度にしている。
+  const CPU_TSUMO_CHANCE = 0.12;
+  const CPU_RON_CHANCE = 0.15;
+  const CPU_PON_CHANCE = 0.3;
+
+  // CPU の1手を room に直接適用する(Firebase を経由しない)
+  function applyLocal(fnName, actingUid, ...args) {
+    const fn = L[fnName];
+    const res = fn(room, actingUid, ...args, { now: Date.now() });
+    if (res.error) {
+      console.warn('practice:' + fnName, actingUid, res.error);
+      return false;
+    }
+    room = res.room;
+    render();
+    return true;
+  }
+
+  // 今 CPU がすることがあれば少し間を置いて cpuTick を呼ぶ。無ければ何もしない
+  // (renderGame の末尾から毎回呼ばれ、人間の番になったら自然に止まる)
+  function scheduleCpu() {
+    clearTimeout(cpuTimer);
+    cpuTimer = null;
+    if (!practiceMode || !room || !room.round) return;
+    const r = room.round;
+    let needsBot = false;
+    if (r.phase === 'declare') needsBot = r.declaration.uid !== uid;
+    else if (r.phase === 'claim') needsBot = true; // 何もすることがなければ cpuTick が無視する
+    else if (r.phase === 'draw' || r.phase === 'discard') needsBot = L.currentUid(room) !== uid;
+    if (needsBot) cpuTimer = setTimeout(cpuTick, 700);
+  }
+
+  function cpuTick() {
+    if (!practiceMode || !room || !room.round) return;
+    const r = room.round;
+    if (r.phase === 'declare') {
+      if (r.declaration.uid !== uid) applyLocal('confirmWin', r.declaration.uid);
+      return;
+    }
+    if (r.phase === 'claim') {
+      if (cpuActClaim()) return;
+      if (L.claimExpired(room, Date.now())) {
+        const nextUid = room.order[(r.turnIndex + 1) % room.order.length];
+        if (nextUid !== uid) applyLocal('draw', nextUid);
+      }
+      return;
+    }
+    const cur = L.currentUid(room);
+    if (cur === uid) return;
+    if (r.phase === 'draw') { applyLocal('draw', cur); return; }
+    if (r.phase === 'discard') {
+      const hand = r.hands[cur];
+      if (L.canDeclare(room, cur) && Math.random() < CPU_TSUMO_CHANCE) { applyLocal('declareWin', cur, 'tsumo'); return; }
+      const cards = L.cardsOf(hand);
+      const pick = cards[Math.floor(Math.random() * cards.length)];
+      applyLocal('discard', cur, pick);
+    }
+  }
+
+  // ポン・ロンの受付中、人間以外の候補者に代わって CPU の判断をする(誰か1体が行動したら true)
+  function cpuActClaim() {
+    const r = room.round;
+    const candidates = room.order.filter((u) => u !== uid && u !== r.lastDiscard.uid && r.claim.passed.indexOf(u) < 0);
+    if (!candidates.length) return false;
+    for (const bot of candidates) {
+      if (L.canDeclare(room, bot) && Math.random() < CPU_RON_CHANCE) return applyLocal('declareWin', bot, 'ron');
+    }
+    for (const bot of candidates) {
+      const cards = L.cardsOf(r.hands[bot]);
+      if (cards.length >= 2 && Math.random() < CPU_PON_CHANCE) return applyLocal('pon', bot, cards.slice(0, 2));
+    }
+    // 誰も割り込まないなら CPU 全員まとめてパスして手番を進める
+    let any = false;
+    for (const bot of candidates) { if (applyLocal('passClaim', bot)) any = true; }
+    return any;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ゲーム操作: トランザクションで GameLogic を適用(練習モードはローカルに直接適用)
   // ---------------------------------------------------------------------------
   async function runAction(fnName, ...args) {
     await flushLayout();
+    if (practiceMode) {
+      const fn = L[fnName];
+      const res = fn(room, uid, ...args, { now: Date.now() });
+      if (res.error) throw new Error(res.error);
+      room = res.room;
+      render();
+      return;
+    }
     const ref = roomRef();
     return db.runTransaction(async (tx) => {
       const doc = await tx.get(ref);
@@ -228,6 +362,8 @@
       const check = L.setLayout(room, uid, layout);
       if (check.error) {
         console.warn('layout skipped:', check.error);
+      } else if (practiceMode) {
+        room = check.room;
       } else {
         const path = new firebase.firestore.FieldPath('round', 'hands', uid, 'layout');
         const prev = layoutInflight;
@@ -240,7 +376,7 @@
     } else {
       pendingLayout = null;
     }
-    if (layoutInflight) await layoutInflight;
+    if (!practiceMode && layoutInflight) await layoutInflight;
   }
 
   // ---------------------------------------------------------------------------
@@ -289,7 +425,9 @@
   function renderGame() {
     showScreen('game');
     const r = room.round;
-    el('game-room-code').textContent = roomCode;
+    el('hud-room-item').innerHTML = practiceMode
+      ? '🤖 練習モード'
+      : '部屋 <strong id="game-room-code">' + roomCode + '</strong>';
     el('round-no').textContent = r.no;
     el('deck-count').textContent = r.deck.length;
     el('mode-label').textContent = room.settings.mode === 'advanced' ? 'じょうきゅう' : 'きほん';
@@ -299,6 +437,7 @@
     renderActions();
     renderModal();
     manageClaimTimer();
+    scheduleCpu();
   }
 
   function renderBanner() {
@@ -611,6 +750,9 @@
       if (saved) el('name-input').value = saved;
     } catch (_) { /* noop */ }
     el('create-room-btn').addEventListener('click', createRoom);
+    el('practice-btn').addEventListener('click', () => {
+      try { startPractice(); } catch (e) { console.error(e); el('lobby-error').textContent = '練習モードの開始に失敗しました: ' + e.message; }
+    });
     el('join-room-btn').addEventListener('click', () => joinRoom(el('room-code-input').value.trim()));
     el('room-code-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(el('room-code-input').value.trim()); });
     el('leave-room-btn').addEventListener('click', leaveRoom);
