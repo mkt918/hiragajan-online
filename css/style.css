@@ -198,7 +198,9 @@ input[type="text"], select {
 .hand[data-size="sm"] .space { border-width: 1px; }
 
 /* 挿入スロット: 「+」を常時薄く表示してスペースを入れられることに気づけるようにする。
- * 選択中・ドラッグ中は「ここに移動」の意味に変わるので + を消し、色で示す。 */
+ * 選択中・ドラッグ中は「ここに移動」の意味に変わるので + を消し、色で示す。
+ * 手番・情報を示す藍色(accent-2)や捨てる/宣言を示す朱色(accent-3)とは役割が違う
+ * 「並べ替え」の操作なので、どちらとも混同しないよう墨色(ink)の濃淡だけで示す。 */
 .slot {
   width: 16px; height: var(--card-h); min-height: 0; padding: 0; flex-shrink: 0;
   border: none; border-radius: 4px; background: transparent;
@@ -210,14 +212,14 @@ input[type="text"], select {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
   font-size: 13px; font-weight: 800; line-height: 1;
-  color: var(--color-accent-2-deep);
+  color: var(--color-ink-2);
   opacity: 0.5;
   pointer-events: none;
 }
 .hand[data-size="sm"] .slot::after { font-size: 10px; }
-.hand--selecting .slot, .hand--dragging .slot { background: var(--color-accent-2); opacity: 0.35; width: 22px; }
+.hand--selecting .slot, .hand--dragging .slot { background: var(--color-ink-2); opacity: 0.28; width: 22px; }
 .hand--selecting .slot::after, .hand--dragging .slot::after { content: ''; }
-.hand--selecting .slot:hover, .slot--over { opacity: 1 !important; background: var(--color-accent-2-deep) !important; width: 26px !important; }
+.hand--selecting .slot:hover, .slot--over { opacity: 1 !important; background: var(--color-ink) !important; width: 26px !important; }
 
 /* 固定 meld */
 .meld { display: inline-flex; gap: 1px; padding: 3px; border: 2px solid var(--color-accent-3); border-radius: var(--radius-cell); margin-right: var(--space-2xs); background: color-mix(in oklch, var(--color-accent-3) 12%, white); }
