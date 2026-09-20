@@ -35,6 +35,16 @@
   --color-mint-deep: oklch(56% 0.13 165);
   --color-mint-ink: oklch(20% 0.03 165);
 
+  /* table — ゲーム画面の「机」。木目を思わせる暖色の卓面(ページ全体のクリーム紙とは別の面) */
+  --color-table: oklch(53% 0.055 55);
+  --color-table-2: oklch(40% 0.05 50);
+  --color-table-edge: oklch(28% 0.045 45);
+  --color-table-ink: oklch(96% 0.014 90);
+  --color-seat-0: var(--color-accent-deep);
+  --color-seat-1: var(--color-accent-2);
+  --color-seat-2: var(--color-accent-3);
+  --color-seat-3: var(--color-mint-deep);
+
   /* type — 兄弟プロジェクトと揃える(index.html で読み込み済み) */
   --font-display: "Plus Jakarta Sans", "M PLUS Rounded 1c", sans-serif;
   --font-body: "M PLUS Rounded 1c", "Plus Jakarta Sans", sans-serif;

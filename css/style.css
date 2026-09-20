@@ -136,20 +136,55 @@ input[type="text"], select {
 
 /* ---- ガイドバナー: 今なにをすべきかを常に1行で ---- */
 .banner {
-  position: sticky; top: 0; z-index: 10;
+  position: sticky; top: 0; z-index: 20;
   padding: var(--space-xs) var(--space-sm);
   background: var(--color-paper-3);
-  border-bottom: 2px solid var(--color-rule);
+  border-radius: 0 0 var(--radius-input) var(--radius-input);
+  box-shadow: var(--shadow-card);
   font-weight: 800; text-align: center;
   transition: background var(--dur-med) var(--ease-out), color var(--dur-med) var(--ease-out);
 }
 .banner--mine { background: var(--color-accent); color: var(--color-accent-ink); }
 .banner--claim { background: var(--color-accent-3); color: var(--color-accent-3-ink); }
 
-/* ---- HUD(部屋・局・山札) ---- */
-.hud { justify-content: center; gap: var(--space-sm); margin-bottom: var(--space-sm); color: var(--color-ink-2); font-size: var(--text-sm); }
-.hud__item strong { color: var(--color-ink); }
-.hud__mode { font-weight: 700; color: var(--color-accent-2-deep); }
+/* ---- 机(共有エリア): みんなで囲んでいる机のイメージ ---- */
+.table {
+  position: relative;
+  padding: var(--space-sm) var(--space-sm) var(--space-md);
+  border-radius: var(--radius-card) var(--radius-card) var(--space-2xs) var(--space-2xs);
+  border: 5px solid var(--color-table-edge);
+  border-bottom-width: 2px;
+  background:
+    radial-gradient(120% 90% at 50% -20%, color-mix(in oklch, var(--color-table) 55%, white) 0%, var(--color-table) 55%, var(--color-table-2) 100%);
+  box-shadow: inset 0 0 22px rgba(0, 0, 0, 0.28), var(--shadow-card);
+  overflow: hidden;
+}
+.table::before {
+  /* 木目のような、ごく薄い筋。実在の質感を主張しすぎない程度に */
+  content: '';
+  position: absolute; inset: 0;
+  background-image: repeating-linear-gradient(97deg, rgba(255, 255, 255, 0.035) 0 2px, transparent 2px 7px);
+  pointer-events: none;
+}
+.table__meta {
+  position: relative; justify-content: center; gap: var(--space-sm); margin-bottom: var(--space-xs);
+  color: var(--color-table-ink); font-size: var(--text-sm); font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+.table__meta strong { color: var(--color-table-ink); }
+.hud__mode { font-weight: 800; }
+
+.table__center { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: var(--space-2xs); }
+.deck-stack { position: relative; width: 34px; height: 46px; }
+.deck-stack__card {
+  position: absolute; inset: 0; border-radius: 6px;
+  background: linear-gradient(150deg, var(--color-ink-2), var(--color-ink));
+  border: 2px solid var(--color-table-edge);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+.deck-stack__card--2 { transform: translate(3px, 3px) rotate(5deg); opacity: 0.85; }
+.deck-stack__card--1 { transform: translate(-2px, -1px) rotate(-4deg); }
+.deck-label { margin: 2px 0 0; font-weight: 800; font-size: var(--text-sm); color: var(--color-table-ink); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35); }
 
 /* ---- 手札(hand-ui.js が生成) ---- */
 .hand {
@@ -235,11 +270,29 @@ input[type="text"], select {
 /* 固定 meld */
 .meld { display: inline-flex; gap: 1px; padding: 3px; border: 2px solid var(--color-accent-3); border-radius: var(--radius-cell); margin-right: var(--space-2xs); background: color-mix(in oklch, var(--color-accent-3) 12%, white); }
 
-/* ---- 他プレイヤー欄(2〜4人をグリッド表示) ---- */
-.others-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-2xs); margin-bottom: var(--space-sm); }
-.player { border: 2px solid var(--color-rule); border-radius: var(--radius-card); padding: var(--space-2xs) var(--space-xs); background: white; transition: border-color var(--dur-med) var(--ease-out), box-shadow var(--dur-med) var(--ease-out); min-width: 0; }
-.player--turn { border-color: var(--color-accent-2); box-shadow: 0 0 0 2px var(--color-accent-2); }
+/* ---- 他プレイヤー欄: 机の上に置かれた席のイメージ ---- */
+.others-grid { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-2xs); }
+.player {
+  border: 2px solid var(--color-rule); border-radius: var(--radius-card);
+  padding: var(--space-2xs) var(--space-xs); background: var(--color-paper);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+  transition: border-color var(--dur-med) var(--ease-out), box-shadow var(--dur-med) var(--ease-out), transform var(--dur-med) var(--ease-out);
+  min-width: 0;
+}
+.player--turn { border-color: var(--color-accent-2); box-shadow: 0 0 0 3px var(--color-accent-2), 0 4px 10px rgba(0, 0, 0, 0.25); transform: translateY(-2px); }
 .player__name { font-weight: 800; overflow-wrap: anywhere; }
+
+/* 名前の頭文字バッジ。誰が誰か一目で分かるように色分けする */
+.seat-avatar {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 26px; height: 26px; border-radius: 50%;
+  font-weight: 800; font-size: var(--text-xs);
+  background: var(--color-seat-0); color: white;
+}
+.seat-avatar--0 { background: var(--color-seat-0); }
+.seat-avatar--1 { background: var(--color-seat-1); }
+.seat-avatar--2 { background: var(--color-seat-2); }
+.seat-avatar--3 { background: var(--color-seat-3); }
 
 /* 手札や場札(meld)と混同しないよう、捨て札は薄いグレーの箱にラベル付きで囲む */
 .discard-pile {
@@ -277,7 +330,17 @@ input[type="text"], select {
   color: var(--color-accent-3-ink); transform: scale(1.03);
 }
 
-.my-area { position: relative; }
+/* ---- 自分の席: 机の手前に手札を広げているイメージ。机と地続きに見せる ---- */
+.seat--me {
+  position: relative;
+  margin: 0 0 var(--space-sm);
+  padding: var(--space-sm);
+  background: var(--color-paper-2);
+  border: 3px solid var(--color-table-edge);
+  border-top-width: 0;
+  border-radius: var(--space-2xs) var(--space-2xs) var(--radius-card) var(--radius-card);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.12);
+}
 .hand-cols-row { margin-bottom: var(--space-2xs); }
 
 /* ---- 主操作エリア(画面下に固定) ---- */

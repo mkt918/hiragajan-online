@@ -118,21 +118,32 @@
     <p id="wait-error" class="error"></p>
   </main>
 
-  <!-- ===== ゲーム画面 ===== -->
+  <!-- ===== ゲーム画面: 机を囲んでいるイメージ ===== -->
   <div id="game-screen" class="hidden">
     <div id="banner" class="banner"></div>
-    <main>
-      <div class="hud row">
-        <span class="hud__item" id="hud-room-item">部屋 <strong id="game-room-code"></strong></span>
-        <span class="hud__item">第<span id="round-no"></span>局</span>
-        <span class="hud__item">🂠 山札 <strong id="deck-count"></strong>枚</span>
-        <span class="hud__item hud__mode" id="mode-label"></span>
+    <main class="game-main">
+
+      <!-- 机(共有エリア): 相手プレイヤーと山札 -->
+      <div class="table">
+        <div class="table__meta row">
+          <span class="hud__item" id="hud-room-item">部屋 <strong id="game-room-code"></strong></span>
+          <span class="hud__item">第<span id="round-no"></span>局</span>
+          <span class="hud__item hud__mode" id="mode-label"></span>
+        </div>
+        <section id="others" class="others-grid"></section>
+        <div class="table__center">
+          <div class="deck-stack" aria-hidden="true">
+            <span class="deck-stack__card deck-stack__card--2"></span>
+            <span class="deck-stack__card deck-stack__card--1"></span>
+          </div>
+          <p class="deck-label">🂠 山札 <strong id="deck-count"></strong>枚</p>
+        </div>
       </div>
 
-      <section id="others" class="others-grid"></section>
-
-      <section class="card-box my-area">
+      <!-- 自分の席: 手前に手札を広げているイメージ -->
+      <section class="seat seat--me">
         <div class="row">
+          <span class="seat-avatar" id="my-avatar"></span>
           <span class="player__name" id="my-name"></span>
           <span class="muted" id="my-count"></span>
           <span class="spacer"></span>

@@ -392,6 +392,25 @@
     return room && room.players[u] ? room.players[u].name : '?';
   }
 
+  // 席の色分け(名前の頭文字を丸バッジにして「誰が誰か」を一目で分かりやすくする)
+  function seatColorIndex(u) {
+    let h = 0;
+    for (let i = 0; i < u.length; i++) h = (h * 31 + u.charCodeAt(i)) >>> 0;
+    return h % 4;
+  }
+  // 「CPU1」「CPU2」のように名前が数字で終わる場合はその数字を、それ以外は先頭の文字を表示する
+  // (先頭文字だけだと CPU1/CPU2/CPU3 が全員「C」になって区別できないため)
+  function avatarLabel(name) {
+    const trimmed = (name || '').trim();
+    const last = trimmed.charAt(trimmed.length - 1);
+    if (/[0-9]/.test(last)) return last;
+    return trimmed.charAt(0) || '?';
+  }
+  function applyAvatar(el2, u) {
+    el2.textContent = avatarLabel(nameOf(u));
+    el2.className = 'seat-avatar seat-avatar--' + seatColorIndex(u);
+  }
+
   function render() {
     if (!room) { showScreen('lobby'); return; }
     if (room.status === 'lobby' || !room.round) { renderWait(); return; }
@@ -478,9 +497,10 @@
       p.className = 'player' + (cur === u ? ' player--turn' : '');
       const head = document.createElement('div');
       head.className = 'row';
-      head.innerHTML = '<span class="player__name"></span><span class="muted"></span>';
-      head.children[0].textContent = nameOf(u);
-      head.children[1].textContent = room.players[u].wins + '勝 / ' + L.totalCount(r.hands[u]) + '枚';
+      head.innerHTML = '<span class="seat-avatar"></span><span class="player__name"></span><span class="muted"></span>';
+      applyAvatar(head.children[0], u);
+      head.children[1].textContent = nameOf(u);
+      head.children[2].textContent = room.players[u].wins + '勝 / ' + L.totalCount(r.hands[u]) + '枚';
       p.appendChild(head);
       const body = document.createElement('div');
       body.className = 'row';
@@ -542,6 +562,7 @@
   function renderMyHand() {
     const r = room.round;
     const hand = r.hands[uid];
+    applyAvatar(el('my-avatar'), uid);
     el('my-name').textContent = nameOf(uid) + '(あなた)';
     if (!hand) { el('my-hand').innerHTML = '<p class="muted">観戦中</p>'; return; }
     el('my-count').textContent = room.players[uid].wins + '勝 / ' + L.totalCount(hand) + '枚';

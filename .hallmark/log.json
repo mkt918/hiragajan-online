@@ -1,5 +1,13 @@
 [
   {
+    "date": "2026-09-20",
+    "macrostructure": "designed-as-app, redesign (game screen only — 机を囲むテーブルトップの見立てに変更)",
+    "theme": "Hum (retuned) + table surface tokens (--color-table*)",
+    "theme_axes": "light / rounded-sans / multi (卓面=暖色の木目茶、既存の金/藍/朱/翡翠はそのまま維持)",
+    "enrichment": "Tier A pure CSS art (木目のごく薄いストライプ、山札の重なりカード表現)",
+    "brief": "ゲーム中UIが分かりにくいとの指摘を受け、他プレイヤーと山札を「机」、自分の手札を机の手前に地続きの「席」として見せる構造に全面刷新。プレイヤーごとに色分けした頭文字アバターを追加"
+  },
+  {
     "date": "2026-09-16",
     "macrostructure": "designed-as-app (no marketing macrostructure — three-screen utility: Lobby + Wait + Game)",
     "theme": "Hum (retuned)",
