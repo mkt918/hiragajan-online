@@ -83,6 +83,16 @@
     return name;
   }
 
+  // 自分の手札の見せ方(自動折り返し/1〜4列)。端末ごとの好みなので localStorage に保存する。
+  function loadHandCols() {
+    try { return localStorage.getItem('hiragajan:handCols') || '0'; } catch (_) { return '0'; }
+  }
+  function applyHandCols(value) {
+    const hand = el('my-hand');
+    hand.dataset.cols = value;
+    hand.style.setProperty('--hand-cols', value);
+  }
+
   // ---------------------------------------------------------------------------
   // 部屋の作成・参加・退室
   // ---------------------------------------------------------------------------
@@ -443,9 +453,12 @@
       if (cur === uid) { text = 'いらないカードを1枚えらんで「捨てる」'; b.classList.add('banner--mine'); }
       else text = nameOf(cur) + 'さんが捨てるカードをえらんでいます';
     } else if (r.phase === 'claim') {
-      const sec = Math.max(0, Math.ceil((r.claim.deadline - Date.now()) / 1000));
-      if (r.lastDiscard.uid === uid) text = 'ほかの人がポン・ロンできる時間です(' + sec + ')';
-      else { text = nameOf(r.lastDiscard.uid) + 'さんの「' + C.charOf(r.lastDiscard.cardId) + '」をポン・ロンできます(' + sec + ')'; b.classList.add('banner--claim'); }
+      if (ponPick) { text = '🀄 自分の手札から2枚選んで言葉を成立させてね(' + ponPick.length + '/2)'; b.classList.add('banner--claim'); }
+      else {
+        const sec = Math.max(0, Math.ceil((r.claim.deadline - Date.now()) / 1000));
+        if (r.lastDiscard.uid === uid) text = 'ほかの人がポン・ロンできる時間です(' + sec + ')';
+        else { text = nameOf(r.lastDiscard.uid) + 'さんの「' + C.charOf(r.lastDiscard.cardId) + '」をポン・ロンできます(' + sec + ')'; b.classList.add('banner--claim'); }
+      }
     } else if (r.phase === 'declare') {
       if (r.declaration.uid === uid) { text = 'みんなに見せて確認。よければ「成立!」'; b.classList.add('banner--mine'); }
       else { text = nameOf(r.declaration.uid) + 'さんがあがり宣言中!'; b.classList.add('banner--claim'); }
@@ -628,17 +641,18 @@
       else add('待っています…', '', null, true);
     } else if (r.phase === 'discard') {
       // 捨てる操作は手札の下の「捨てるゾーン」で行う(タップして選択→ゾーンをタップ、またはドラッグ)。
-      // ここにはあがりボタンだけ置く。
-      if (cur === uid) declareBtn();
-      else add('待っています…', '', null, true);
+      if (cur === uid) {
+        if (selectedCardId) add('キャンセル', '', () => handEditor.clearSelection());
+        declareBtn();
+      } else add('待っています…', '', null, true);
     } else if (r.phase === 'claim') {
       const nextUid = room.order[(r.turnIndex + 1) % room.order.length];
       if (r.lastDiscard.uid === uid) {
         add('待っています…', '', null, true);
       } else if (ponPick) {
-        add('カードを2枚えらんでね(' + ponPick.length + '/2)', '', null, true);
+        add('自分の手札から2枚選んで言葉を成立させてね(' + ponPick.length + '/2)', '', null, true);
         add('ポンする', 'danger', () => { const pick = ponPick.slice(); ponPick = null; handEditor.setHighlight([]); act('pon', pick); }, ponPick.length !== 2);
-        add('やめる', '', () => { ponPick = null; handEditor.setHighlight([]); renderActions(); });
+        add('キャンセル', '', () => { ponPick = null; handEditor.setHighlight([]); renderActions(); });
       } else {
         const expired = L.claimExpired(room, Date.now());
         if (nextUid === uid) add('ツモ(1枚引く)', 'primary', () => act('draw'), !expired, '受付時間がおわると引けます');
@@ -762,6 +776,13 @@
       const saved = localStorage.getItem('hiragajan:name');
       if (saved) el('name-input').value = saved;
     } catch (_) { /* noop */ }
+    const handColsInput = el('hand-cols-input');
+    handColsInput.value = loadHandCols();
+    applyHandCols(handColsInput.value);
+    handColsInput.addEventListener('change', () => {
+      try { localStorage.setItem('hiragajan:handCols', handColsInput.value); } catch (_) { /* noop */ }
+      applyHandCols(handColsInput.value);
+    });
     el('create-room-btn').addEventListener('click', createRoom);
     el('practice-btn').addEventListener('click', () => {
       try { startPractice(); } catch (e) { console.error(e); el('lobby-error').textContent = '練習モードの開始に失敗しました: ' + e.message; }

@@ -55,6 +55,7 @@
 
     // ---- 描画 --------------------------------------------------------------
     function render() {
+      const prevLefts = captureCardLefts();
       container.innerHTML = '';
       container.classList.toggle('hand--editable', editable);
       container.classList.toggle('hand--selecting', !!selectedId);
@@ -66,6 +67,39 @@
           container.appendChild(makeCard(token));
         }
         if (editable) container.appendChild(makeSlot(i + 1));
+      });
+      playFlip(prevLefts);
+    }
+
+    // ---- 入れ替えの簡易アニメーション(FLIP)----------------------------------
+    // 描画し直す前に各カードの位置を覚えておき、描画後に「元の位置にいたふり」をしてから
+    // 本来の位置へ滑らせる。同じ id のカードが動いた場合だけ効果が出る。
+    function captureCardLefts() {
+      const map = {};
+      container.querySelectorAll('.card').forEach((el) => {
+        map[el.dataset.id] = el.getBoundingClientRect().left;
+      });
+      return map;
+    }
+
+    function playFlip(prevLefts) {
+      container.querySelectorAll('.card').forEach((el) => {
+        const prevLeft = prevLefts[el.dataset.id];
+        if (prevLeft == null) return; // 新しく増えたカード(ツモなど)はアニメーションしない
+        const dx = prevLeft - el.getBoundingClientRect().left;
+        if (Math.abs(dx) < 1) return; // 動いていない
+        el.style.transition = 'none';
+        el.style.transform = 'translateX(' + dx + 'px)';
+        void el.offsetWidth; // 強制リフローしてから戻す(FLIP テクニック)
+        let cleared = false;
+        const clear = () => {
+          if (cleared) return;
+          cleared = true;
+          el.style.transition = '';
+          el.style.transform = '';
+        };
+        requestAnimationFrame(() => requestAnimationFrame(clear));
+        setTimeout(clear, 50); // rAF が来ない環境(バックグラウンドタブ等)でも必ず戻す保険
       });
     }
 
@@ -114,7 +148,6 @@
       el.addEventListener('click', () => {
         if (selectedId) {
           moveCard(selectedId, index);
-          setSelected(null);
         } else {
           pushUndo();
           layout = layout.slice(0, index).concat([SPACE], layout.slice(index));
@@ -135,18 +168,22 @@
       if (opts.onChange) opts.onChange(layout.slice());
     }
 
-    // cardId を「現在の並びにおける index の位置」へ移動(index は削除前の位置基準)
+    // cardId を「現在の並びにおける index の位置」へ移動(index は削除前の位置基準)。
+    // 選択解除もここで一緒に行い、描画が1回で済むようにする(2回に分けると
+    // 入れ替えアニメーション用の位置比較が正しく効かないため)。
     function moveCard(cardId, index) {
       const from = layout.indexOf(cardId);
       if (from < 0) return;
       let to = index;
       if (to > from) to -= 1;
-      if (to === from) { render(); return; }
+      selectedId = null;
+      if (to === from) { render(); if (opts.onSelect) opts.onSelect(null); return; }
       pushUndo();
       const next = layout.slice(0, from).concat(layout.slice(from + 1));
       next.splice(to, 0, cardId);
       layout = next;
       commit();
+      if (opts.onSelect) opts.onSelect(null);
     }
 
     function setSelected(id) {
@@ -260,9 +297,7 @@
         if (opts.onSelect) opts.onSelect(null);
         opts.onDropToZone(d.id);
       } else if (e.type !== 'pointercancel' && d.target) {
-        selectedId = null;
         moveCard(d.id, d.target.index);
-        if (opts.onSelect) opts.onSelect(null);
       } else {
         render();
       }

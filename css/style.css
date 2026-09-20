@@ -160,13 +160,24 @@ input[type="text"], select {
   --card-font: calc(var(--card-w) * 0.55);
 }
 /* 自分の手札(lg)は2段に折り返さず、収まらない分は横スクロールで見る */
+/* 自分の手札の見せ方(#hand-cols-input で選択、既定は自動=折り返し)。
+ * data-cols="0": 自動 — 幅いっぱいで自然に折り返す(何行になってもよい)
+ * data-cols="1": 1列 — 折り返さず横スクロール
+ * data-cols="2〜4": その枚数でだいたい折り返す(--hand-cols を使って幅を制限) */
 .hand[data-size="lg"] {
+  flex-wrap: wrap;
+}
+.hand[data-size="lg"][data-cols="1"] {
   flex-wrap: nowrap;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
   padding-bottom: var(--space-3xs);
+}
+.hand[data-size="lg"][data-cols]:not([data-cols="0"]):not([data-cols="1"]) {
+  width: calc(var(--hand-cols, 2) * (var(--card-w) + 20px));
+  max-width: 100%;
 }
 .hand[data-size="sm"] { --card-w: clamp(20px, 5.5vw, 30px); gap: 1px; }
 .hand[data-size="sm"] .card { border-width: 1px; border-radius: 4px; }
@@ -267,6 +278,7 @@ input[type="text"], select {
 }
 
 .my-area { position: relative; }
+.hand-cols-row { margin-bottom: var(--space-2xs); }
 
 /* ---- 主操作エリア(画面下に固定) ---- */
 .actions {

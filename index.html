@@ -139,6 +139,18 @@
           <button id="undo-btn" class="btn-sm" disabled title="ひとつ前の並びにもどす">↩ もどす</button>
           <button id="clear-spaces-btn" class="btn-sm">スペースを消す</button>
         </div>
+        <div class="row hand-cols-row">
+          <label class="select-pill">
+            手札の見せ方
+            <select id="hand-cols-input">
+              <option value="0">自動(折り返し)</option>
+              <option value="1">1列(横スクロール)</option>
+              <option value="2">2列</option>
+              <option value="3">3列</option>
+              <option value="4">4列</option>
+            </select>
+          </label>
+        </div>
         <div id="words-preview" class="words words--preview hidden"></div>
         <div id="my-melds" class="row"></div>
         <div id="my-hand"></div>
