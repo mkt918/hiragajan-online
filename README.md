@@ -5,15 +5,17 @@
 
 **公開URL**: https://mkt918.github.io/hiragajan-online/ (GitHub Pages 設定後に有効)
 
-## 現在の状況(2026-09-20)
+## 現在の状況(2026-09-21)
 
 | 項目 | 状態 |
 |---|---|
-| ゲームロジック(基本/上級、ポン/ロン、宣言/取り消し、山札切れ再シャッフル) | 完成・`node js/tests.js` 24件 PASS |
+| ゲームロジック(基本/上級、ポン/ロン、宣言/取り消し、山札切れ再シャッフル) | 完成・`node js/tests.js` 33件 PASS |
 | 手札 UI(タップ/ドラッグ並べ替え、スペース挿入、もどす、入れ替えアニメーション) | 完成 |
 | Firebase 同期(部屋作成/参加、トランザクション、並びのデバウンス送信) | 完成 |
 | 最大人数 | **8人**(部屋コードは4桁のまま。`GameLogic.MAX_PLAYERS` と `firestore.rules` の両方で制御) |
 | 練習モード(CPU対戦、1台の端末で動作確認) | 完成(下記「練習モード」参照) |
+| 離脱・放置対策(ゲーム中の退出、ホストの手番スキップ、ホスト不在時の引き継ぎ、人数不足/山札切れの流局) | 完成(QA 指摘 #1・#6・#16 対応) |
+| 時計ずれ対策(サーバー時刻補正)・連打防止・日本語エラー・2タブ警告 | 完成(QA 指摘 #5・#7・#9・#12 対応) |
 | Firebase プロジェクト `hiragajan-online`(Firestore asia-northeast1、匿名認証) | 作成済み・ルール適用済み |
 | デザイン(hallmark トークン再生成・ゲーム画面を「机を囲む」見た目に全面刷新) | 完成 |
 | 手札の折り返し設定(自動/1〜4列、端末ごとに保存) | 完成 |
@@ -81,7 +83,7 @@ firebase.json .firebaserc
 {
   code, hostUid, status: 'lobby'|'playing',
   settings: { mode: 'basic'|'advanced', openHands: bool, claimSeconds: number },
-  players: { [uid]: { name, wins, joinedAt } },
+  players: { [uid]: { name, wins, joinedAt, lastSeenAt } },
   order: [uid...],            // 席順。手番はこの index で回す
   round: {
     no, turnIndex, phase: 'draw'|'discard'|'claim'|'declare'|'result',
@@ -147,9 +149,16 @@ firebase login:ci               # ブラウザが開くのでログインし、�
 
 登録しない場合でも、手動で `firebase deploy --only firestore:rules`(この PC で `firebase login` 済みなら Claude 側からも実行可)すれば同じ結果になる。
 
+## 離脱・切断への対処(実装済み)
+
+- **ゲーム中の「退出」**: 手札と場札を山札の底に戻して抜ける。手番の人が抜けたら次の人のツモから再開、残りが2人未満なら流局(`GameLogic.leaveGame`)
+- **ホストの「⏭ 手番を飛ばす」**: タブを閉じた人の番で止まったとき、ホストが手番を強制的に進められる(ツモ待ちは飛ばす/捨て待ちは代わりに捨てる/受付は打ち切る/宣言は取り消す。`GameLogic.forceAdvance`)
+- **ホストの引き継ぎ**: 各端末が15秒ごとに `players.{uid}.lastSeenAt` を更新し、ホストの更新が45秒止まると他の参加者に「👑 ホストを引き継ぐ」が出る(`GameLogic.takeHost`)。バックグラウンドのタブはブラウザがタイマーを間引くため、離席していなくてもボタンが出ることがある(押さなければ何も起きない)
+- **流局**: 山札も河も空になった/人数が足りなくなった局は勝者なしで終了し、ホストが「次の局へ」を押せる
+
 ## 今後決めること
 
-- 切断検知(Firestore に onDisconnect は無い。必要なら Realtime Database のプレゼンス、または `lastSeenAt` ハートビート + ホストの手番スキップ)
 - 古い部屋の掃除(Firestore の TTL ポリシーを `createdAt` に設定)
-- 山札の順序が DB 上で見える点をどこまで気にするか
+- 山札の順序・非公開手札が DB 上では見える点(信頼ベース)をどこまで気にするか。厳密にするなら Cloud Functions 経由に移す
+- 同じブラウザの2タブは同一プレイヤー扱い(警告は出す)。別々に遊びたい場合はシークレットウィンドウ等を使う
 - 同時にポン/ロンが宣言された場合の裁定はトランザクションの到達順(通信の速さ)で決まる。厳密な優先順位付け(ロン優先など)が必要ならルール調整が要る

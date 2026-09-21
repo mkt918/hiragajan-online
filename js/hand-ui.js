@@ -48,7 +48,14 @@
     let drawnId = null;
     let highlightIds = []; // 外部から強調したいカード(ポン選択など)
     let dropZone = opts.dropZone || null; // 捨てる、など「並べ替え以外」のドラッグ先
+    let pendingExternal = null; // ドラッグ中に来た setLayout を保留し、ドロップ後に反映する
     const undoStack = [];
+
+    function sameCardSet(a, b) {
+      const ca = a.filter((t) => t !== SPACE).slice().sort();
+      const cb = b.filter((t) => t !== SPACE).slice().sort();
+      return ca.length === cb.length && ca.every((v, i) => v === cb[i]);
+    }
 
     container.classList.add('hand');
     container.dataset.size = opts.size;
@@ -211,6 +218,9 @@
       const dy = e.clientY - drag.startY;
       if (!drag.active) {
         if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+        // 縦方向が優勢ならページスクロールの意図とみなしてドラッグを始めない
+        // (タッチでは touch-action: pan-y によりブラウザ側で pointercancel になる。マウス用の保険)
+        if (Math.abs(dy) > Math.abs(dx) * 1.5) { abortDrag(e); return; }
         startDrag(e);
       }
       drag.ghost.style.transform = 'translate(' + (e.clientX - drag.gx) + 'px,' + (e.clientY - drag.gy) + 'px)';
@@ -226,6 +236,15 @@
       } else {
         updateDropTarget(e.clientX, e.clientY);
       }
+    }
+
+    function abortDrag(e) {
+      const el = drag.el;
+      el.removeEventListener('pointermove', onCardPointerMove);
+      el.removeEventListener('pointerup', onCardPointerUp);
+      el.removeEventListener('pointercancel', onCardPointerUp);
+      try { el.releasePointerCapture(e.pointerId); } catch (_) { /* noop */ }
+      drag = null;
     }
 
     function isOverZone(x, y) {
@@ -291,6 +310,16 @@
       container.classList.remove('hand--dragging');
       if (d.target) d.target.el.classList.remove('slot--over');
       if (opts.onDragOverZone) opts.onDragOverZone(false);
+      // ドラッグ中に外から来ていた更新(カード集合が変わった等)があれば、ドロップ操作より優先して反映する
+      if (pendingExternal) {
+        const ext = pendingExternal;
+        pendingExternal = null;
+        api.setLayout(ext.next, ext.extra);
+        if (e.type !== 'pointercancel' && d.overZone && opts.onDropToZone && layout.indexOf(d.id) >= 0) {
+          opts.onDropToZone(d.id);
+        }
+        return;
+      }
       if (e.type !== 'pointercancel' && d.overZone && opts.onDropToZone) {
         selectedId = null;
         render();
@@ -306,9 +335,12 @@
     // ---- 公開 API ----------------------------------------------------------
     const api = {
       // サーバー等からの更新を反映。選択中カードが消えていれば選択解除。
+      // カードの集合が変わった(ツモ・捨て・ポン・新しい局)ときは「もどす」の履歴を捨てる。
+      // 捨てた札や前の局の札が画面に復活してしまうのを防ぐため。
       setLayout(next, extra) {
         const ex = extra || {};
-        if (drag && drag.active) return; // ドラッグ中は上書きしない(終了後に再度 setLayout される想定)
+        if (drag && drag.active) { pendingExternal = { next: next.slice(), extra: ex }; return; }
+        if (!sameCardSet(layout, next)) undoStack.length = 0;
         layout = next.slice();
         if (typeof ex.drawn !== 'undefined') drawnId = ex.drawn;
         if (typeof ex.highlight !== 'undefined') highlightIds = ex.highlight || [];
@@ -328,7 +360,9 @@
       canUndo() { return undoStack.length > 0; },
       undo() {
         if (!undoStack.length) return false;
-        layout = undoStack.pop();
+        const prev = undoStack.pop();
+        if (!sameCardSet(prev, layout)) { undoStack.length = 0; render(); return false; } // 集合が違う履歴は捨てる
+        layout = prev;
         selectedId = null;
         render();
         if (opts.onChange) opts.onChange(layout.slice());

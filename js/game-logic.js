@@ -27,6 +27,8 @@
 
   const MAX_PLAYERS = 8;
   const MIN_PLAYERS = 2;
+  // この時間 lastSeenAt が更新されていないホストは「不在」とみなし、他の参加者が引き継げる
+  const HOST_STALE_MS = 45000;
 
   function dealCount(mode) { return mode === 'advanced' ? 13 : 7; }
   function winningCount(mode) { return mode === 'advanced' ? 14 : 8; }
@@ -152,6 +154,132 @@
     round.lastDiscard = null;
   }
 
+  // 勝者なしで局を終える(流局・人数不足)。room は clone 済みのものを渡す
+  function endRoundAsDraw(next) {
+    const r = next.round;
+    r.phase = 'result';
+    r.winner = null;
+    r.claim = null;
+    r.declaration = null;
+    r.drawnCard = null;
+    r.lastDiscard = null;
+    r.version++;
+    return next;
+  }
+
+  // 宣言を取り消して宣言前のフェーズへ戻す(cancelWin と forceAdvance/leaveGame で共用)。round を直接書き換える
+  function undoDeclaration(next, now) {
+    const r = next.round;
+    const d = r.declaration;
+    if (!d) return;
+    if (d.type === 'ron') {
+      r.hands[d.uid].layout = removeFromLayout(r.hands[d.uid].layout, d.cardId);
+      r.discards[d.fromUid] = r.discards[d.fromUid].concat([d.cardId]);
+      r.phase = 'claim';
+      // 取り消し後も他の人がポンできるよう締切を延長する
+      r.claim = { passed: [], deadline: now + (next.settings.claimSeconds || 0) * 1000 };
+    } else {
+      r.phase = 'discard';
+    }
+    r.declaration = null;
+  }
+
+  // 手番の人の代わりに1枚捨てる(強制進行用)。ツモった札があればそれ、なければ先頭の札
+  function discardOnBehalf(next, cur, now) {
+    const r = next.round;
+    const hand = r.hands[cur];
+    const cardId = r.drawnCard && hand.layout.indexOf(r.drawnCard) >= 0 ? r.drawnCard : cardsOf(hand)[0];
+    if (!cardId) return false;
+    hand.layout = removeFromLayout(hand.layout, cardId);
+    r.discards[cur] = r.discards[cur].concat([cardId]);
+    r.lastDiscard = { uid: cur, cardId, at: now };
+    r.drawnCard = null;
+    return true;
+  }
+
+  // ホストが止まっている手番を強制的に進める(離脱・放置対策)。
+  //   draw   → その人の番を飛ばす
+  //   discard→ 代わりに1枚捨てて(受付なしで)次へ
+  //   claim  → 受付を打ち切って次へ
+  //   declare→ 宣言を取り消したうえで上記を適用
+  function forceAdvance(room, uid, opts) {
+    const now = (opts && opts.now) || Date.now();
+    if (room.hostUid !== uid) return err('ホストだけが進められます');
+    const next = clone(room);
+    const r = next.round;
+    if (!r || next.status !== 'playing') return err('局が始まっていません');
+    if (r.phase === 'result') return err('局は終わっています');
+    if (r.phase === 'declare') undoDeclaration(next, now);
+    const n = next.order.length;
+    if (r.phase === 'draw' || r.phase === 'claim') {
+      advanceTurn(r, n);
+    } else if (r.phase === 'discard') {
+      if (!discardOnBehalf(next, currentUid(next), now)) return err('捨てるカードがありません');
+      advanceTurn(r, n);
+    }
+    r.version++;
+    return ok(next);
+  }
+
+  // 現ホストが不在(lastSeenAt が古い / hostUid が空)のとき、参加者がホストを引き継ぐ
+  function takeHost(room, uid, opts) {
+    const now = (opts && opts.now) || Date.now();
+    if (!isPlayer(room, uid)) return err('参加者ではありません');
+    if (room.hostUid === uid) return ok(clone(room));
+    if (!hostIsStale(room, now)) return err('ホストは接続中です');
+    const next = clone(room);
+    next.hostUid = uid;
+    return ok(next);
+  }
+
+  function hostIsStale(room, now) {
+    const host = room.hostUid ? room.players[room.hostUid] : null;
+    if (!host) return true;
+    if (typeof host.lastSeenAt !== 'number') return false; // 一度も heartbeat が無い(古いクライアント)場合は在席扱い
+    return now - host.lastSeenAt > HOST_STALE_MS;
+  }
+
+  // ゲーム中に部屋を抜ける。手札と場札は山札の底へ戻し、手番・受付・宣言を矛盾なく整える。
+  // 残りが2人未満なら流局で局を終える。ロビー中なら leaveRoom と同じ。
+  function leaveGame(room, uid, opts) {
+    const now = (opts && opts.now) || Date.now();
+    if (!isPlayer(room, uid)) return err('参加者ではありません');
+    if (room.status !== 'playing' || !room.round) return leaveRoom(room, uid);
+    const next = clone(room);
+    const r = next.round;
+    const curUid = currentUid(next);
+    if (r.phase === 'declare' && r.declaration && r.declaration.uid === uid) undoDeclaration(next, now);
+
+    const hand = r.hands[uid];
+    let returned = cardsOf(hand);
+    hand.melds.forEach((m) => { returned = returned.concat(m.cards); });
+    r.deck = r.deck.concat(returned);
+    delete r.hands[uid];
+    delete next.players[uid];
+    const leaverIndex = next.order.indexOf(uid);
+    next.order = next.order.filter((u) => u !== uid);
+    if (next.hostUid === uid) next.hostUid = next.order[0] || null;
+    if (r.lastDiscard && r.lastDiscard.uid === uid) r.lastDiscard = null;
+    const n = next.order.length;
+    if (n < MIN_PLAYERS) return ok(endRoundAsDraw(next));
+
+    if (curUid === uid) {
+      // 抜けた人の番だった: 次の人のツモから再開
+      r.turnIndex = leaverIndex % n;
+      r.phase = 'draw';
+      r.claim = null;
+      r.drawnCard = null;
+    } else {
+      r.turnIndex = next.order.indexOf(curUid);
+      if (r.phase === 'claim' && r.claim) {
+        r.claim.passed = r.claim.passed.filter((u) => u !== uid);
+        if (!r.lastDiscard || allOthersPassed(next)) advanceTurn(r, n);
+      }
+    }
+    r.version++;
+    return ok(next);
+  }
+
   // 山札から1枚引く。claim 中でも条件を満たせば手番を進めてから引く。
   function draw(room, uid, opts) {
     const o = opts || {};
@@ -166,7 +294,10 @@
     if (r.phase !== 'draw') return err('今は引けません');
     if (currentUid(next) !== uid) return err('あなたの番ではありません');
     if (r.deck.length === 0) reshuffleDiscards(r, o.rng);
-    if (r.deck.length === 0) return err('山札がありません');
+    if (r.deck.length === 0) {
+      // 山札も河も空(すべて手札・場札にある)なら流局として局を終える
+      return ok(endRoundAsDraw(next));
+    }
     const card = r.deck[0];
     r.deck = r.deck.slice(1);
     r.hands[uid].layout = r.hands[uid].layout.concat([card]);
@@ -309,17 +440,7 @@
     const r = next.round;
     if (!r || r.phase !== 'declare') return err('宣言中ではありません');
     if (r.declaration.uid !== uid) return err('宣言者だけが取り消せます');
-    const d = r.declaration;
-    if (d.type === 'ron') {
-      r.hands[uid].layout = removeFromLayout(r.hands[uid].layout, d.cardId);
-      r.discards[d.fromUid] = r.discards[d.fromUid].concat([d.cardId]);
-      r.phase = 'claim';
-      // 取り消し後も他の人がポンできるよう締切を延長する
-      r.claim = { passed: [], deadline: now + (next.settings.claimSeconds || 0) * 1000 };
-    } else {
-      r.phase = 'discard';
-    }
-    r.declaration = null;
+    undoDeclaration(next, now);
     r.version++;
     return ok(next);
   }
@@ -375,12 +496,17 @@
   }
 
   function joinRoom(room, uid, name, now) {
-    if (isPlayer(room, uid)) return ok(clone(room)); // 再入室
+    if (isPlayer(room, uid)) {
+      const again = clone(room);
+      if (!again.hostUid) again.hostUid = uid; // ホスト不在の部屋に戻ってきた人がホストになる
+      return ok(again); // 再入室
+    }
     if (room.status !== 'lobby') return err('このゲームはすでに始まっています');
     if (room.order.length >= MAX_PLAYERS) return err('部屋は満員です(最大8人)');
     const next = clone(room);
     next.players[uid] = { name: name || 'プレイヤー', wins: 0, joinedAt: now || Date.now() };
     next.order = next.order.concat([uid]);
+    if (!next.hostUid) next.hostUid = uid; // 全員が抜けて空になった部屋に入った人がホストになる
     return ok(next);
   }
 
@@ -405,7 +531,12 @@
   const GameLogic = {
     MAX_PLAYERS,
     MIN_PLAYERS,
+    HOST_STALE_MS,
     SPACE,
+    hostIsStale,
+    forceAdvance,
+    takeHost,
+    leaveGame,
     dealCount,
     winningCount,
     cardsOf,

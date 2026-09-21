@@ -5,21 +5,41 @@ service cloud.firestore {
     match /rooms/{roomCode} {
       function signedIn() { return request.auth != null; }
       function isMember() { return signedIn() && request.auth.uid in resource.data.order; }
+      function nameOk(data) {
+        return data.players[request.auth.uid].name is string
+          && data.players[request.auth.uid].name.size() >= 1
+          && data.players[request.auth.uid].name.size() <= 20;
+      }
       // ロビー中に自分を order の末尾に追加する参加更新
       function isJoining() {
         return signedIn()
           && resource.data.status == 'lobby'
           && resource.data.order.size() < 8
           && request.resource.data.order.size() == resource.data.order.size() + 1
-          && request.resource.data.order[resource.data.order.size()] == request.auth.uid;
+          && request.resource.data.order[resource.data.order.size()] == request.auth.uid
+          && nameOk(request.resource.data);
+      }
+      // hostUid は「変えない」「自分にする(引き継ぎ)」「現ホストが譲る」のどれかだけ許可
+      function hostChangeOk() {
+        return request.resource.data.hostUid == resource.data.hostUid
+          || request.resource.data.hostUid == request.auth.uid
+          || resource.data.hostUid == request.auth.uid;
+      }
+      // 設定(ルール・公開・受付秒数)はホストしか変えられない
+      function settingsChangeOk() {
+        return request.resource.data.settings == resource.data.settings
+          || resource.data.hostUid == request.auth.uid;
       }
 
-      allow read: if signedIn();
+      // 部屋コードを知っている人だけ読める(一覧取得は不可)
+      allow get: if signedIn();
+      allow list: if false;
       allow create: if signedIn()
         && request.resource.data.hostUid == request.auth.uid
         && request.resource.data.order == [request.auth.uid]
-        && request.resource.data.status == 'lobby';
-      allow update: if isMember() || isJoining();
+        && request.resource.data.status == 'lobby'
+        && nameOk(request.resource.data);
+      allow update: if (isMember() || isJoining()) && hostChangeOk() && settingsChangeOk();
       allow delete: if false;
     }
   }

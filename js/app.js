@@ -37,8 +37,29 @@
   let layoutTimer = null;
   const LAYOUT_DEBOUNCE_MS = 400;
 
+  // 端末の時計ずれ対策: サーバーが書いた updatedAt と受信時刻の差で補正する(誤差は通信遅延程度)
+  let serverOffset = 0;
+  function nowMs() { return practiceMode ? Date.now() : Date.now() + serverOffset; }
+
+  // 在席確認(ホスト不在の検知用)。この間隔で players.{uid}.lastSeenAt を更新する
+  const HEARTBEAT_MS = 15000;
+  let heartbeatTimer = null;
+
+  let busy = false; // 操作の二重送信防止(連打対策)
+
   const el = (id) => document.getElementById(id);
   const roomRef = () => db.collection('rooms').doc(roomCode);
+
+  // Firestore のエラーを利用者向けの日本語にする
+  function friendlyError(e) {
+    const code = e && e.code ? String(e.code) : '';
+    if (code.indexOf('unavailable') >= 0 || code.indexOf('deadline') >= 0 || /offline/i.test(e && e.message || '')) {
+      return '通信できませんでした。電波を確認してもう一度押してね';
+    }
+    if (code.indexOf('permission-denied') >= 0) return 'この操作はできません(接続をやり直してみてね)';
+    if (code.indexOf('failed-precondition') >= 0 || code.indexOf('aborted') >= 0) return '同時に操作があったのでやり直してね';
+    return (e && e.message) || 'エラーが起きました';
+  }
 
   // ---------------------------------------------------------------------------
   // Firebase 初期化・匿名認証
@@ -69,10 +90,16 @@
   }
 
   function checkUrlForRoom() {
+    if (practiceMode || roomCode) return;
     const code = new URLSearchParams(window.location.search).get('room');
-    if (code && /^\d{4}$/.test(code)) {
-      el('room-code-input').value = code;
+    if (!code || !/^\d{4}$/.test(code)) return;
+    el('room-code-input').value = code;
+    // 名前が未設定のまま自動参加すると全員「プレイヤー」になるので、初めての端末では名前入力を促す
+    if (el('name-input').value.trim()) {
       joinRoom(code);
+    } else {
+      el('connection-status').textContent = '部屋コード ' + code + ' に入ります。なまえを入れて「入る」を押してね';
+      el('name-input').focus();
     }
   }
 
@@ -102,6 +129,7 @@
 
   async function createRoom() {
     el('lobby-error').textContent = '';
+    if (!uid || practiceMode) { el('lobby-error').textContent = '接続がまだ終わっていません。少し待ってからもう一度押してね。'; return; }
     const mode = document.querySelector('input[name="mode"]:checked').value;
     const openHands = el('open-hands-input').checked;
     const claimSeconds = Number(el('claim-seconds-input').value);
@@ -134,23 +162,25 @@
   async function joinRoom(code) {
     el('lobby-error').textContent = '';
     if (!/^\d{4}$/.test(code)) { el('lobby-error').textContent = '4けたの部屋コードを入れてね。'; return; }
+    if (!uid || practiceMode) { el('lobby-error').textContent = '接続がまだ終わっていません。少し待ってからもう一度押してね。'; return; }
     const name = myName();
     const ref = db.collection('rooms').doc(code);
     try {
       await db.runTransaction(async (tx) => {
         const doc = await tx.get(ref);
         if (!doc.exists) throw new Error('その部屋はありません。');
-        const res = L.joinRoom(doc.data(), uid, name, Date.now());
+        const res = L.joinRoom(doc.data(), uid, name, nowMs());
         if (res.error) throw new Error(res.error);
         tx.update(ref, {
           players: res.room.players,
           order: res.room.order,
+          hostUid: res.room.hostUid,
           updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         });
       });
       enterRoom(code);
     } catch (e) {
-      el('lobby-error').textContent = e.message;
+      el('lobby-error').textContent = friendlyError(e);
       console.error(e);
     }
   }
@@ -164,11 +194,47 @@
     unsubscribeRoom = roomRef().onSnapshot((doc) => {
       if (!doc.exists) { toast('部屋が消えました'); leaveRoom(); return; }
       room = doc.data();
+      // サーバーが確定した書き込みの updatedAt から時計ずれを推定する
+      if (!doc.metadata.hasPendingWrites && room.updatedAt && typeof room.updatedAt.toMillis === 'function') {
+        serverOffset = room.updatedAt.toMillis() - Date.now();
+      }
       render();
     }, (err) => {
       console.error(err);
-      toast('接続エラー: ' + err.message);
+      toast('接続エラー: ' + friendlyError(err));
     });
+    startHeartbeat();
+  }
+
+  let hostCheckTimer = null;
+  function startHeartbeat() {
+    stopHeartbeat();
+    const beat = async () => {
+      if (!roomCode || !uid || practiceMode) return;
+      try {
+        await roomRef().update(new firebase.firestore.FieldPath('players', uid, 'lastSeenAt'), nowMs());
+      } catch (e) { /* 退室済み・権限なし等は無視 */ }
+    };
+    beat();
+    heartbeatTimer = setInterval(beat, HEARTBEAT_MS);
+    // 書き込みが無い間もホスト不在を検知できるよう、定期的に判定し直す
+    hostCheckTimer = setInterval(() => { if (room && roomCode) renderHostControls(); }, 10000);
+  }
+  function stopHeartbeat() {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+    clearInterval(hostCheckTimer);
+    hostCheckTimer = null;
+  }
+
+  // 画面上の一時状態(選択・ポン選択・受付タイマー)を片付ける。部屋を出るとき共通
+  function resetTransientUi() {
+    clearInterval(claimTimer);
+    claimTimer = null;
+    ponPick = null;
+    selectedCardId = null;
+    pendingLayout = null;
+    clearTimeout(layoutTimer);
   }
 
   async function leaveRoom() {
@@ -179,21 +245,21 @@
       uid = realUid; // 本物の Firebase uid に戻す
       room = null;
       roomCode = null;
-      selectedCardId = null;
-      ponPick = null;
+      resetTransientUi();
       showScreen('lobby');
       return;
     }
-    // ロビー中なら参加者リストからも抜ける。ゲーム中は購読解除のみ(再入室できる)
-    if (room && room.status === 'lobby' && L.isPlayer(room, uid)) {
-      try { await runAction('leaveRoom'); } catch (_) { /* noop */ }
+    // ロビー中なら参加者リストから抜ける。ゲーム中は手札を山札に戻して抜ける(残った人の卓が止まらないように)
+    if (room && L.isPlayer(room, uid)) {
+      try { await runAction(room.status === 'lobby' ? 'leaveRoom' : 'leaveGame'); }
+      catch (e) { console.warn('leave failed', e); }
     }
+    stopHeartbeat();
     if (unsubscribeRoom) unsubscribeRoom();
     unsubscribeRoom = null;
     roomCode = null;
     room = null;
-    pendingLayout = null;
-    clearTimeout(layoutTimer);
+    resetTransientUi();
     const url = new URL(window.location.href);
     url.searchParams.delete('room');
     window.history.replaceState({}, '', url);
@@ -214,6 +280,7 @@
     uid = 'you';
     practiceMode = true;
     roomCode = null;
+    resetTransientUi();
 
     let r = L.createRoom({ uid, name, mode, openHands, claimSeconds, now: Date.now() });
     for (let i = 1; i <= cpuCount; i++) {
@@ -318,7 +385,7 @@
       const doc = await tx.get(ref);
       if (!doc.exists) throw new Error('部屋がありません');
       const fn = L[fnName];
-      const res = fn(doc.data(), uid, ...args, { now: Date.now() });
+      const res = fn(doc.data(), uid, ...args, { now: nowMs() });
       if (res.error) throw new Error(res.error);
       const r = res.room;
       tx.update(ref, {
@@ -333,14 +400,27 @@
     });
   }
 
-  // ボタンから呼ぶ用: エラーはトーストで表示
+  // ボタンから呼ぶ用: 実行中は二重送信を防ぎ、エラーは日本語トーストで表示
   async function act(fnName, ...args) {
+    if (busy) return;
+    busy = true;
+    setActionsBusy(true);
     try {
       await runAction(fnName, ...args);
     } catch (e) {
       console.warn(fnName, e);
-      toast(e.message);
+      toast(friendlyError(e));
+    } finally {
+      busy = false;
+      setActionsBusy(false);
     }
+  }
+
+  function setActionsBusy(flag) {
+    document.querySelectorAll('#actions button, #discard-zone, #modal button, #start-game-btn').forEach((b) => {
+      if (flag) { if (!b.disabled) { b.dataset.busyDisabled = '1'; b.disabled = true; } }
+      else if (b.dataset.busyDisabled) { delete b.dataset.busyDisabled; b.disabled = false; }
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -439,6 +519,7 @@
     el('wait-msg').textContent = isHost
       ? (room.order.length < L.MIN_PLAYERS ? 'あと' + (L.MIN_PLAYERS - room.order.length) + '人待っています' : '')
       : 'ホストが「はじめる」を押すのを待っています';
+    renderHostControls();
   }
 
   function renderGame() {
@@ -455,6 +536,7 @@
     renderMyHand();
     renderActions();
     renderModal();
+    renderHostControls();
     manageClaimTimer();
     scheduleCpu();
   }
@@ -474,7 +556,7 @@
     } else if (r.phase === 'claim') {
       if (ponPick) { text = '🀄 自分の手札から2枚選んで言葉を成立させてね(' + ponPick.length + '/2)'; b.classList.add('banner--claim'); }
       else {
-        const sec = Math.max(0, Math.ceil((r.claim.deadline - Date.now()) / 1000));
+        const sec = Math.max(0, Math.ceil((r.claim.deadline - nowMs()) / 1000));
         if (r.lastDiscard.uid === uid) text = 'ほかの人がポン・ロンできる時間です(' + sec + ')';
         else { text = nameOf(r.lastDiscard.uid) + 'さんの「' + C.charOf(r.lastDiscard.cardId) + '」をポン・ロンできます(' + sec + ')'; b.classList.add('banner--claim'); }
       }
@@ -482,9 +564,20 @@
       if (r.declaration.uid === uid) { text = 'みんなに見せて確認。よければ「成立!」'; b.classList.add('banner--mine'); }
       else { text = nameOf(r.declaration.uid) + 'さんがあがり宣言中!'; b.classList.add('banner--claim'); }
     } else if (r.phase === 'result') {
-      text = nameOf(r.winner) + 'さんのあがり!';
+      text = r.winner ? nameOf(r.winner) + 'さんのあがり!' : '流局(この局はあがりなし)';
     }
     b.textContent = text;
+  }
+
+  // ホストが不在のとき「ホストを引き継ぐ」、ホスト自身には「手番を進める」を出す(オンラインのみ)
+  function renderHostControls() {
+    const takeBtn = el('take-host-btn');
+    const waitTakeBtn = el('wait-take-host-btn');
+    const canTake = !practiceMode && room && L.isPlayer(room, uid) && room.hostUid !== uid && L.hostIsStale(room, nowMs());
+    takeBtn.classList.toggle('hidden', !canTake);
+    waitTakeBtn.classList.toggle('hidden', !canTake);
+    const leaveBtn = el('leave-game-btn');
+    leaveBtn.classList.toggle('hidden', !room || !room.round);
   }
 
   function renderOthers() {
@@ -675,7 +768,7 @@
         add('ポンする', 'danger', () => { const pick = ponPick.slice(); ponPick = null; handEditor.setHighlight([]); act('pon', pick); }, ponPick.length !== 2);
         add('キャンセル', '', () => { ponPick = null; handEditor.setHighlight([]); renderActions(); });
       } else {
-        const expired = L.claimExpired(room, Date.now());
+        const expired = L.claimExpired(room, nowMs());
         if (nextUid === uid) add('ツモ(1枚引く)', 'primary', () => act('draw'), !expired, '受付時間がおわると引けます');
         // 受付時間が過ぎても次の人が引くまではポン・ロンできる(早い者勝ち。競合はトランザクションで解決)
         add('ポン', 'danger', () => { ponPick = []; handEditor.clearSelection(); renderActions(); });
@@ -686,6 +779,16 @@
       // 宣言者はモーダルで塞がず、手札を並べ直しながら確定できる
       add('成立!', 'ok', () => act('confirmWin'));
       add('取り消し', '', () => act('cancelWin'));
+    }
+    // ホスト用: 止まっている手番を進める(離脱・放置対策)。自分の番のときは不要
+    if (!practiceMode && room.hostUid === uid && r.phase !== 'result') {
+      const actor = r.phase === 'declare' ? r.declaration.uid : (r.phase === 'claim' ? null : cur);
+      if (actor !== uid) {
+        const label = r.phase === 'declare' ? '⏭ 宣言を取り消して進める' : (r.phase === 'claim' ? '⏭ 受付を終わって進める' : '⏭ ' + nameOf(cur) + 'さんの番を飛ばす');
+        add(label, 'btn-sm', () => {
+          if (window.confirm('止まっている手番をホストの権限で進めます。よろしいですか?')) act('forceAdvance');
+        });
+      }
     }
     // result はモーダル側で操作する
     renderDiscardZone();
@@ -715,27 +818,34 @@
     const box = document.createElement('div');
     box.className = 'modal__box';
     const who = r.phase === 'declare' ? r.declaration.uid : r.winner;
-    const hand = r.hands[who];
+    const hand = who ? r.hands[who] : null;
     const h = document.createElement('h2');
-    h.textContent = r.phase === 'declare'
-      ? nameOf(who) + 'さんの あがり宣言' + (r.declaration.type === 'ron' ? '(ロン)' : '')
-      : nameOf(who) + 'さんの あがり!';
+    if (r.phase === 'declare') h.textContent = nameOf(who) + 'さんの あがり宣言' + (r.declaration.type === 'ron' ? '(ロン)' : '');
+    else if (who) h.textContent = nameOf(who) + 'さんの あがり!';
+    else h.textContent = '流局';
     box.appendChild(h);
-    const words = document.createElement('div');
-    words.className = 'words';
-    hand.melds.forEach((md) => {
-      const w = document.createElement('span');
-      w.className = 'word word--meld';
-      w.textContent = md.cards.map(C.charOf).join('');
-      words.appendChild(w);
-    });
-    C.layoutToWords(hand.layout).forEach((t) => {
-      const w = document.createElement('span');
-      w.className = 'word';
-      w.textContent = t;
-      words.appendChild(w);
-    });
-    box.appendChild(words);
+    if (hand) {
+      const words = document.createElement('div');
+      words.className = 'words';
+      hand.melds.forEach((md) => {
+        const w = document.createElement('span');
+        w.className = 'word word--meld';
+        w.textContent = md.cards.map(C.charOf).join('');
+        words.appendChild(w);
+      });
+      C.layoutToWords(hand.layout).forEach((t) => {
+        const w = document.createElement('span');
+        w.className = 'word';
+        w.textContent = t;
+        words.appendChild(w);
+      });
+      box.appendChild(words);
+    } else {
+      const p = document.createElement('p');
+      p.className = 'muted';
+      p.textContent = room.order.length < L.MIN_PLAYERS ? '人数が足りなくなったので、この局は終わりです' : '山札も河も無くなったので、この局はあがりなしで終わりです';
+      box.appendChild(p);
+    }
     const row = document.createElement('div');
     row.className = 'row';
     if (r.phase === 'declare') {
@@ -747,7 +857,12 @@
       const tally = document.createElement('p');
       tally.textContent = room.order.map((u) => nameOf(u) + ' ' + room.players[u].wins + '勝').join(' / ');
       box.appendChild(tally);
-      if (room.hostUid === uid) row.appendChild(btn('次の局へ', 'primary', () => act('nextRound')));
+      if (room.order.length < L.MIN_PLAYERS) {
+        const p = document.createElement('p');
+        p.className = 'muted';
+        p.textContent = '2人以上いないと次の局は始められません。部屋を出て作り直してね';
+        box.appendChild(p);
+      } else if (room.hostUid === uid) row.appendChild(btn('次の局へ', 'primary', () => act('nextRound')));
       else {
         const p = document.createElement('p');
         p.className = 'muted';
@@ -768,11 +883,22 @@
     return b;
   }
 
-  // claim 中だけ毎秒バナーとボタンを更新する
+  // claim 中だけカウントダウンを更新する。ボタンを毎回作り直すとタップが取りこぼされるので、
+  // ボタンの再描画は「受付が終わった/戻った」瞬間だけにする
+  let lastClaimExpired = null;
   function manageClaimTimer() {
     const active = room && room.round && room.round.phase === 'claim';
     if (active && !claimTimer) {
-      claimTimer = setInterval(() => { if (room && room.round && room.round.phase === 'claim') { renderBanner(); if (!ponPick) renderActions(); } }, 500);
+      lastClaimExpired = L.claimExpired(room, nowMs());
+      claimTimer = setInterval(() => {
+        if (!(room && room.round && room.round.phase === 'claim')) return;
+        renderBanner();
+        const expired = L.claimExpired(room, nowMs());
+        if (expired !== lastClaimExpired) {
+          lastClaimExpired = expired;
+          if (!ponPick && !busy) renderActions();
+        }
+      }, 500);
     } else if (!active && claimTimer) {
       clearInterval(claimTimer);
       claimTimer = null;
@@ -826,7 +952,37 @@
       handEditor.clearSelection();
       act('discard', id);
     });
+    el('leave-game-btn').addEventListener('click', () => {
+      const msg = practiceMode ? '練習をやめてロビーに戻りますか?' : '部屋を出ますか?(手札は山札に戻り、残りの人でゲームが続きます)';
+      if (window.confirm(msg)) leaveRoom();
+    });
+    const takeHost = () => { if (window.confirm('ホストが応答していません。あなたがホストになりますか?')) act('takeHost'); };
+    el('take-host-btn').addEventListener('click', takeHost);
+    el('wait-take-host-btn').addEventListener('click', takeHost);
+
+    // ルール選択の見た目: :has() 非対応ブラウザ向けにクラスでも表現する
+    const syncModeClass = () => {
+      document.querySelectorAll('.mode-option').forEach((lab) => {
+        lab.classList.toggle('mode-option--checked', lab.querySelector('input').checked);
+      });
+    };
+    document.querySelectorAll('input[name="mode"]').forEach((i) => i.addEventListener('change', syncModeClass));
+    syncModeClass();
+
+    // 並び替えの取りこぼしを減らす: 画面が隠れた時点で送る(タブ閉じ直前は間に合わないことがある)
     window.addEventListener('beforeunload', () => { flushLayout(); });
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushLayout(); });
+
+    // 同じブラウザで2つ目のタブを開くと同じプレイヤーとして二重に操作できてしまうので注意を出す
+    try {
+      const tabId = String(Math.random());
+      localStorage.setItem('hiragajan:tab', tabId);
+      window.addEventListener('storage', (e) => {
+        if (e.key === 'hiragajan:tab' && e.newValue && e.newValue !== tabId) {
+          toast('別のタブでも開かれています。操作は1つのタブで行ってね');
+        }
+      });
+    } catch (_) { /* noop */ }
   }
 
   bindEvents();

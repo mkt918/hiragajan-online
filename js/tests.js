@@ -64,8 +64,9 @@
     for (const uid of room.order) {
       L.cardsOf(r.hands[uid]).forEach(push);
       r.hands[uid].melds.forEach((m) => m.cards.forEach(push));
-      r.discards[uid].forEach(push);
     }
+    // 抜けた人の河もカードは残るので、order ではなく discards のキーで数える
+    for (const uid of Object.keys(r.discards)) r.discards[uid].forEach(push);
     assertEqual(n, C.TOTAL_CARDS, 'card conservation');
   }
 
@@ -333,6 +334,126 @@
   test('reconcileLayout は余分を除き欠けを末尾に足し、スペースを残す', () => {
     const out = L.reconcileLayout(['a', '_', 'x', 'b', '_'], ['b', 'a', 'c']);
     assertEqual(out, ['a', '_', 'b', '_', 'c']);
+  });
+
+  // ---- 離脱・強制進行・ホスト引き継ぎ・流局 ---------------------------------
+  test('leaveGame: 手番の人が抜けると次の人のツモから再開、手札は山札へ戻る', () => {
+    let room = makeRoom('basic', 3, 30);
+    room = must(L.draw(room, 'p0'));
+    const deckBefore = room.round.deck.length;
+    room = must(L.leaveGame(room, 'p0', { now: 1000 }));
+    assertEqual(room.order, ['p1', 'p2']);
+    assertEqual(room.hostUid, 'p1', 'ホストは次の人へ');
+    assertEqual(L.currentUid(room), 'p1');
+    assertEqual(room.round.phase, 'draw');
+    assertEqual(room.round.deck.length, deckBefore + 8, '8枚が山札の底へ');
+    assert(!room.round.hands.p0 && !room.players.p0);
+    assertConservation(room);
+    room = must(L.draw(room, 'p1'));
+    assertEqual(L.cardsOf(room.round.hands.p1).length, 8);
+  });
+  test('leaveGame: 手番でない人が抜けても手番は動かず、claim 中なら受付人数を再計算する', () => {
+    let room = makeRoom('advanced', 3, 31);
+    room = must(L.draw(room, 'p0', { now: 1000 }));
+    room = must(L.discard(room, 'p0', firstCard(room, 'p0'), { now: 1000 }));
+    room = must(L.passClaim(room, 'p1'));
+    // 残る候補は p2 だけ。p2 が抜ければ全員パス扱いで次手番へ
+    room = must(L.leaveGame(room, 'p2', { now: 2000 }));
+    assertEqual(room.order, ['p0', 'p1']);
+    assertEqual(room.round.phase, 'draw');
+    assertEqual(L.currentUid(room), 'p1');
+    assertConservation(room);
+  });
+  test('leaveGame: 残り1人になったら流局(result・winner なし)', () => {
+    let room = makeRoom('basic', 2, 32);
+    room = must(L.leaveGame(room, 'p1', { now: 1000 }));
+    assertEqual(room.round.phase, 'result');
+    assertEqual(room.round.winner, null);
+    assertEqual(room.order, ['p0']);
+  });
+  test('leaveGame: 宣言中の宣言者が抜けると宣言は取り消される(ロンは河へ戻る)', () => {
+    let room = makeRoom('advanced', 3, 33);
+    room = must(L.draw(room, 'p0', { now: 1000 }));
+    const thrown = firstCard(room, 'p0');
+    room = must(L.discard(room, 'p0', thrown, { now: 1000 }));
+    room = must(L.declareWin(room, 'p1', 'ron'));
+    room = must(L.leaveGame(room, 'p1', { now: 2000 }));
+    assertEqual(room.round.declaration, null);
+    assertEqual(room.round.discards.p0, [thrown], 'ロン札は河へ戻る');
+    assert(!room.round.hands.p1);
+    assertConservation(room);
+  });
+  test('leaveGame: ロビー中は leaveRoom と同じ', () => {
+    let room = L.createRoom({ uid: 'h', mode: 'basic' });
+    room = must(L.joinRoom(room, 'a', 'A'));
+    room = must(L.leaveGame(room, 'h'));
+    assertEqual(room.order, ['a']);
+    assertEqual(room.hostUid, 'a');
+  });
+  test('forceAdvance: ホストだけが使え、draw/discard/claim/declare それぞれ次へ進む', () => {
+    let room = makeRoom('advanced', 3, 34);
+    mustFail(L.forceAdvance(room, 'p1', { now: 1000 }), 'ホスト以外');
+    // draw を飛ばす
+    room = must(L.forceAdvance(room, 'p0', { now: 1000 }));
+    assertEqual(L.currentUid(room), 'p1');
+    assertEqual(room.round.phase, 'draw');
+    // discard を代行(受付なしで次へ)
+    room = must(L.draw(room, 'p1', { now: 1000 }));
+    room = must(L.forceAdvance(room, 'p0', { now: 1000 }));
+    assertEqual(room.round.discards.p1.length, 1);
+    assertEqual(L.cardsOf(room.round.hands.p1).length, 13);
+    assertEqual(L.currentUid(room), 'p2');
+    assertEqual(room.round.phase, 'draw');
+    // claim を打ち切る
+    room = must(L.draw(room, 'p2', { now: 1000 }));
+    room = must(L.discard(room, 'p2', firstCard(room, 'p2'), { now: 1000 }));
+    assertEqual(room.round.phase, 'claim');
+    room = must(L.forceAdvance(room, 'p0', { now: 1000 }));
+    assertEqual(room.round.phase, 'draw');
+    assertEqual(L.currentUid(room), 'p0');
+    // declare を取り消して進める
+    room = must(L.draw(room, 'p0', { now: 1000 }));
+    room = must(L.declareWin(room, 'p0', 'tsumo'));
+    room = must(L.forceAdvance(room, 'p0', { now: 1000 }));
+    assertEqual(room.round.declaration, null);
+    assertEqual(room.round.phase, 'draw');
+    assertEqual(L.currentUid(room), 'p1');
+    assertConservation(room);
+  });
+  test('takeHost: ホストの lastSeenAt が古いときだけ引き継げる', () => {
+    let room = makeRoom('basic', 2, 35);
+    room.players.p0.lastSeenAt = 1000;
+    mustFail(L.takeHost(room, 'p1', { now: 1000 + L.HOST_STALE_MS - 1 }), 'まだ在席');
+    room = must(L.takeHost(room, 'p1', { now: 1000 + L.HOST_STALE_MS + 1 }));
+    assertEqual(room.hostUid, 'p1');
+    // heartbeat の記録が無い(古いクライアント)ホストは在席扱い
+    let room2 = makeRoom('basic', 2, 36);
+    mustFail(L.takeHost(room2, 'p1', { now: 9e12 }));
+    // hostUid が空なら誰でも
+    room2.hostUid = null;
+    assertEqual(must(L.takeHost(room2, 'p1', { now: 1 })).hostUid, 'p1');
+  });
+  test('joinRoom: ホスト不在の部屋に入った人がホストになる', () => {
+    let room = L.createRoom({ uid: 'h', mode: 'basic' });
+    room = must(L.leaveRoom(room, 'h'));
+    assertEqual(room.hostUid, null);
+    room = must(L.joinRoom(room, 'a', 'A'));
+    assertEqual(room.hostUid, 'a');
+  });
+  test('山札も河も空なら流局で終わる', () => {
+    let room = makeRoom('basic', 2, 37);
+    const r = room.round;
+    // 山札を全部 p1 の手札に押し込み、河は空のまま(保存則は保つ)
+    r.hands.p1.layout = r.hands.p1.layout.concat(r.deck);
+    r.deck = [];
+    assertConservation(room);
+    room = must(L.draw(room, 'p0'));
+    assertEqual(room.round.phase, 'result');
+    assertEqual(room.round.winner, null);
+    // 次の局はホストが始められる
+    room = must(L.nextRound(room, 'p0', { rng: seeded(38) }));
+    assertEqual(room.round.no, 2);
+    assertConservation(room);
   });
 
   // ---- ランダム対局スモーク(保存則) --------------------------------------

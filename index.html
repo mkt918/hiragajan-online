@@ -9,8 +9,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&family=Plus+Jakarta+Sans:wght@600;800&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/tokens.css?v=2">
-  <link rel="stylesheet" href="css/style.css?v=2">
+  <link rel="stylesheet" href="css/tokens.css?v=3">
+  <link rel="stylesheet" href="css/style.css?v=3">
 </head>
 <body>
 
@@ -72,7 +72,7 @@
         </label>
         <button id="practice-btn" class="btn-lg">🤖 ひとりで練習</button>
       </div>
-      <p class="muted">上のルール設定のまま、CPU相手にひとりで試せます。CPUは自動でツモ・捨て・ポン・ロン・あがりを行いますが、言葉になっているかは確認しません(動作確認用)。</p>
+      <p class="muted">上のルール設定のまま、CPU相手にひとりで試せます。CPUは自動でツモ・捨て・パス(じょうきゅうではときどきポン)をします。あがりは自分だけができます(動作確認用)。</p>
     </section>
 
     <section class="card-box">
@@ -80,7 +80,7 @@
       <p class="muted">ホストにもらった4けたのコードを入れてね</p>
       <div class="row">
         <input type="text" id="room-code-input" class="code-input" inputmode="numeric" maxlength="4" placeholder="0000">
-        <button id="join-room-btn" class="primary btn-lg">入る</button>
+        <button id="join-room-btn" class="primary btn-lg" disabled>入る</button>
       </div>
     </section>
 
@@ -114,6 +114,7 @@
       <p id="wait-settings" class="settings-summary"></p>
     </section>
     <button id="start-game-btn" class="primary btn-lg hidden">🎉 はじめる</button>
+    <button id="wait-take-host-btn" class="btn-lg hidden">👑 ホストを引き継ぐ(ホストが応答しません)</button>
     <p id="wait-msg" class="muted center-text"></p>
     <p id="wait-error" class="error"></p>
   </main>
@@ -129,6 +130,8 @@
           <span class="hud__item" id="hud-room-item">部屋 <strong id="game-room-code"></strong></span>
           <span class="hud__item">第<span id="round-no"></span>局</span>
           <span class="hud__item hud__mode" id="mode-label"></span>
+          <button id="take-host-btn" class="btn-sm hidden">👑 ホストを引き継ぐ</button>
+          <button id="leave-game-btn" class="btn-sm hud__leave hidden">退出</button>
         </div>
         <section id="others" class="others-grid"></section>
         <div class="table__center">
@@ -181,8 +184,8 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
   <script src="js/firebase-config.js?v=1"></script>
   <script src="js/cards.js?v=1"></script>
-  <script src="js/game-logic.js?v=1"></script>
-  <script src="js/hand-ui.js?v=1"></script>
-  <script src="js/app.js?v=2"></script>
+  <script src="js/game-logic.js?v=2"></script>
+  <script src="js/hand-ui.js?v=2"></script>
+  <script src="js/app.js?v=3"></script>
 </body>
 </html>
